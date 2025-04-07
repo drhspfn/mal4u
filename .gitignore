@@ -1,0 +1,7 @@
+*.pyc
+.venv/
+test_*.py
+tests/
+dist/
+build/
+mal4u.egg-info/
