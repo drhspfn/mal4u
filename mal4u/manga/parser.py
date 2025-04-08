@@ -1,10 +1,13 @@
+from datetime import date
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlencode
 import aiohttp
 import logging
 import re
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, Tag, NavigableString
 from pydantic import ValidationError
+from .  import constants as mangaConstants
 from mal4u.types import CharacterItem, ExternalLink, LinkItem, RelatedItem
 
 from .types import MangaDetails, MangaSearchResult 
@@ -348,14 +351,163 @@ class MALMangaParser(BaseParser):
             logger.exception(f"An unexpected error occurred within _parse_manga_details for manga ID {manga_id}: {e}")
             return None
 
-    async def search(self, query: str, limit: int = 5) -> List[MangaSearchResult]:
+    async def _parse_link_section(self,
+                              container: Tag,
+                              header_text_exact: str,
+                              id_pattern: re.Pattern,
+                              category_name_for_logging: str) -> List[LinkItem]:
         """
-        Searches for manga on MyAnimeList by query, parsing the HTML table of results.
+        An internal method to search for a section by title text
+        and parsing links inside it. Improved for title text search.
+        """
+        results: List[LinkItem] = []
+        header: Optional[Tag] = None 
+
+        potential_headers = self._safe_find_all(container, 'div', class_='normal_header')
+
+        for h in potential_headers:
+            direct_texts = [str(c).strip() for c in h.contents if isinstance(c, NavigableString) and str(c).strip()]
+
+            if header_text_exact in direct_texts:
+                # Additional check: make sure it's not part of the text of another heading
+                # For example, "Explicit Genres" contains "Genres". We want an exact match.
+                # Often the desired text is the last text node.
+                if direct_texts and direct_texts[-1] == header_text_exact:
+                    header = h
+                    logger.debug(f"Found header for '{header_text_exact}' using direct text node check.")
+                    break 
+
+        # If you can't find it via direct text, let's try the old method (in case of headings inside <a>)
+        if not header:
+            for h in potential_headers:
+                header_link = self._safe_find(h, 'a', string=lambda t: t and header_text_exact == t.strip())
+                if header_link:
+                    header = h
+                    logger.debug(f"Found header for '{header_text_exact}' using inner link text check.")
+                    break
+
+        if not header:
+            logger.warning(f"Header '{header_text_exact}' not found in the container using multiple checks.")
+            return results 
+
+
+        link_container = header.find_next_sibling('div', class_='genre-link')
+        if not link_container:
+            logger.warning(f"Could not find 'div.genre-link' container after header: '{header_text_exact}'")
+            return results 
+
+
+        links = self._safe_find_all(link_container, 'a', class_='genre-name-link')
+        if not links:
+            logger.debug(f"No 'a.genre-name-link' found within the container for '{header_text_exact}'.")
+            return results
+
+        for link_tag in links:
+            href = self._get_attr(link_tag, 'href')
+            full_text = self._get_text(link_tag)
+            name = re.sub(r'\s*\(\d{1,3}(?:,\d{3})*\)$', '', full_text).strip()
+            mal_id = self._extract_id_from_url(href, pattern=id_pattern)
+
+            if name and href and mal_id is not None:
+                try:
+                    item = LinkItem(mal_id=mal_id, name=name, url=href)
+                    results.append(item)
+                except ValidationError as e:
+                    logger.warning(f"Skipping invalid LinkItem data from '{category_name_for_logging}': Name='{name}', URL='{href}', ID='{mal_id}'. Error: {e}")
+                except Exception as e:
+                    logger.error(f"Error creating LinkItem for '{name}' ({href}) in '{category_name_for_logging}': {e}", exc_info=True)
+            else:
+                logger.debug(f"Skipping link in '{category_name_for_logging}' due to missing data: Text='{full_text}', Href='{href}', Extracted ID='{mal_id}'")
+
+        return results
+
+    # ---
+    
+    def _build_maga_search_url(
+        self,
+        query: str, 
+        manga_type:Optional[mangaConstants.MangaType] = None,
+        manga_status:Optional[mangaConstants.MangaStatus] = None,
+        manga_magazine:Optional[int] = None,
+        manga_score:Optional[int] = None,
+        include_genres: Optional[List[int]] = None,  
+        exclude_genres: Optional[List[int]] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ):
+        if not query or query == "": raise ValueError("The required parameter `query` must be passed.")
+        query_params = {"q": query.replace(" ", "+")}
+        if manga_type:
+            query_params['type'] = manga_type.value
+        if manga_status:
+            query_params['status'] = manga_status.value
+        if manga_magazine:
+            query_params['mid'] = manga_magazine
+        if manga_score:
+            query_params['score'] = manga_score
+        if start_date:
+            query_params['sd'] = start_date.day 
+            query_params['sy'] = start_date.year 
+            query_params['sm'] = start_date.month
+        if end_date:
+            query_params['ed'] = end_date.day
+            query_params['ey'] = end_date.year 
+            query_params['em'] = end_date.month 
+
+            
+        genre_pairs = []
+
+        if include_genres:
+            genre_pairs += [("genre[]", genre_id) for genre_id in include_genres]
+        if exclude_genres:
+            genre_pairs += [("genre_ex[]", genre_id) for genre_id in exclude_genres]
+
+        query_list = list(query_params.items()) + genre_pairs
+
+        return f"{constants.MANGA_URL}?{urlencode(query_list)}"
+
+    async def search(
+        self, 
+        query: str, 
+        limit: int = 5,
+        manga_type:Optional[mangaConstants.MangaType] = None,
+        manga_status:Optional[mangaConstants.MangaStatus] = None,
+        manga_magazine:Optional[int] = None,
+        manga_score:Optional[int] = None,
+        include_genres: Optional[List[int]] = None,  
+        exclude_genres: Optional[List[int]] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> List[MangaSearchResult]:
+        """
+        Searches for manga on MyAnimeList using a query, parsing the HTML table of search results.
+
+        Note:
+            When filtering by genres, remember that MyAnimeList also classifies 'Themes' and 'Demographics' 
+            under genres. To include them in the search, simply add their IDs to the `include_genres` or 
+            `exclude_genres` lists.
+
+        Args:
+            query (str): The search query string.
+            limit (int, optional): The maximum number of results to return. Defaults to 5.
+            manga_type (Optional[mangaConstants.MangaType], optional): Filter by manga type (e.g., Manga, Novel). Defaults to None.
+            manga_status (Optional[mangaConstants.MangaStatus], optional): Filter by manga status (e.g., Finished, Publishing). Defaults to None.
+            manga_magazine (Optional[int], optional): Filter by magazine ID. Defaults to None.
+            manga_score (Optional[int], optional): Filter by minimum score. Defaults to None.
+            include_genres (Optional[List[int]], optional): A list of genre IDs that must be included in the manga. Defaults to None.
+            exclude_genres (Optional[List[int]], optional): A list of genre IDs that must not be present in the manga. Defaults to None.
+            start_date (Optional[date], optional): Filter by the earliest publication date (inclusive). Defaults to None.
+            end_date (Optional[date], optional): Filter by the latest publication date (inclusive). Defaults to None.
+
+        Returns:
+            List[MangaSearchResult]: A list of `MangaSearchResult` objects matching the given search criteria.
         """
         if not query:
             return []
 
-        search_url = constants.SEARCH_MANGA_URL.format(query=query.replace(" ", "+"))
+        search_url = self._build_maga_search_url(query, manga_type, manga_status, manga_magazine, 
+                                                 manga_score, include_genres, exclude_genres,
+                                                 start_date, end_date)
         logger.debug(f"Search for manga by URL: {search_url}")
 
         soup = await self._get_soup(search_url)
@@ -365,10 +517,12 @@ class MALMangaParser(BaseParser):
             return []
 
         results: List[MangaSearchResult] = []
-        table = soup.find("div", {"class": "js-categories-seasonal"}).find('table')
+        table = soup.find("div", {"class": "js-categories-seasonal"})
+        if table: table = table.find('table')
         if not table:
             logger.warning("Table with search results not found on the page.")
             return []
+        
         rows = self._safe_select(table, "tr")
 
         if not rows or len(rows) < 2:
@@ -448,3 +602,174 @@ class MALMangaParser(BaseParser):
 
         logger.info(f"The search for '{query}' has been completed. Found {len(results)} results (limit {limit}).")
         return results
+
+    
+    # --- Metadata, genres, themes etc.
+    async def get_manga_genres(self, include_explicit: bool = False) -> List[LinkItem]:
+        """
+        Fetches and parses genre links from the main MAL manga page (manga.php).
+
+        Args:
+            include_explicit: Whether to include Explicit Genres (Ecchi, Erotica, Hentai).
+                            Defaults to False.
+
+        Returns:
+            A list of LinkItem objects representing the genres,
+            or an empty list if fetching fails or the section is not found.
+        """
+        target_url = constants.MANGA_URL
+        logger.info(f"Fetching genres from {target_url} (explicit={include_explicit})")
+
+        soup = await self._get_soup(target_url)
+        if not soup:
+            logger.error(f"Failed to fetch or parse HTML from {target_url} for genres.")
+            return []
+
+        search_container = self._safe_find(soup, 'div', class_='anime-manga-search')
+        if not search_container:
+            logger.warning(f"Could not find the main 'anime-manga-search' container on {target_url}.")
+            return []
+
+        genre_id_pattern = re.compile(r"/genre/(\d+)/")
+        all_genres: List[LinkItem] = []
+
+        logger.debug("Parsing 'Genres' section...")
+        genres_list = await self._parse_link_section(
+            container=search_container,
+            header_text_exact="Genres",
+            id_pattern=genre_id_pattern,
+            category_name_for_logging="Genres"
+        )
+        all_genres.extend(genres_list)
+
+        if include_explicit:
+            logger.debug("Parsing 'Explicit Genres' section...")
+            explicit_genres_list = await self._parse_link_section(
+                container=search_container,
+                header_text_exact="Explicit Genres",
+                id_pattern=genre_id_pattern,
+                category_name_for_logging="Explicit Genres"
+            )
+            all_genres.extend(explicit_genres_list)
+
+        if not all_genres:
+            logger.warning(f"No genres were successfully parsed from {target_url} (check flags and HTML structure).")
+        else:
+            logger.info(f"Successfully parsed {len(all_genres)} genres from {target_url}.")
+
+        return all_genres
+
+    async def get_manga_themes(self) -> List[LinkItem]:
+        """
+        Fetches and parses theme links (Isekai, School, etc.) from the main MAL manga page.
+
+        Returns:
+            A list of LinkItem objects representing the themes,
+            or an empty list if fetching fails or the section is not found.
+        """
+        target_url = constants.MANGA_URL
+        logger.info(f"Fetching themes from {target_url}")
+
+        soup = await self._get_soup(target_url)
+        if not soup:
+            logger.error(f"Failed to fetch or parse HTML from {target_url} for themes.")
+            return []
+
+        search_container = self._safe_find(soup, 'div', class_='anime-manga-search')
+        if not search_container:
+            logger.warning(f"Could not find the main 'anime-manga-search' container on {target_url}.")
+            return []
+
+        theme_id_pattern = re.compile(r"/genre/(\d+)/") # Темы используют тот же URL /genre/
+
+        themes_list = await self._parse_link_section(
+            container=search_container,
+            header_text_exact="Themes",
+            id_pattern=theme_id_pattern,
+            category_name_for_logging="Themes"
+        )
+
+        if not themes_list:
+            logger.warning(f"No themes were successfully parsed from {target_url}.")
+        else:
+            logger.info(f"Successfully parsed {len(themes_list)} themes from {target_url}.")
+
+        return themes_list
+
+    async def get_manga_demographics(self) -> List[LinkItem]:
+        """
+        Fetches and parses demographic links (Shounen, Shoujo, etc.) from the main MAL manga page.
+
+        Returns:
+            A list of LinkItem objects representing the demographics,
+            or an empty list if fetching fails or the section is not found.
+        """
+        target_url = constants.MANGA_URL
+        logger.info(f"Fetching demographics from {target_url}")
+
+        soup = await self._get_soup(target_url)
+        if not soup:
+            logger.error(f"Failed to fetch or parse HTML from {target_url} for demographics.")
+            return []
+
+        search_container = self._safe_find(soup, 'div', class_='anime-manga-search')
+        if not search_container:
+            logger.warning(f"Could not find the main 'anime-manga-search' container on {target_url}.")
+            return []
+
+        demographic_id_pattern = re.compile(r"/genre/(\d+)/") # Демография тоже использует /genre/
+
+        demographics_list = await self._parse_link_section(
+            container=search_container,
+            header_text_exact="Demographics",
+            id_pattern=demographic_id_pattern,
+            category_name_for_logging="Demographics"
+        )
+
+        if not demographics_list:
+            logger.warning(f"No demographics were successfully parsed from {target_url}.")
+        else:
+            logger.info(f"Successfully parsed {len(demographics_list)} demographics from {target_url}.")
+
+        return demographics_list
+
+    async def get_manga_magazines_preview(self) -> List[LinkItem]:
+        """
+        Fetches and parses the preview list of magazine links from the main MAL manga page.
+        Note: This is NOT the full list from the dedicated magazines page.
+
+        Returns:
+            A list of LinkItem objects representing the magazines shown in the preview,
+            or an empty list if fetching fails or the section is not found.
+        """
+        target_url = constants.MANGA_URL
+        logger.info(f"Fetching magazines preview from {target_url}")
+
+        soup = await self._get_soup(target_url)
+        if not soup:
+            logger.error(f"Failed to fetch or parse HTML from {target_url} for magazines preview.")
+            return []
+
+        search_container = self._safe_find(soup, 'div', class_='anime-manga-search')
+        if not search_container:
+            logger.warning(f"Could not find the main 'anime-manga-search' container on {target_url}.")
+            return []
+
+        # Important: the pattern for ID logs is different!
+        magazine_id_pattern = re.compile(r"/magazine/(\d+)/")
+
+        # The title of the magazines section often contains a "View More" link, so look for the text "Magazines"
+        # Use the _parse_link_section helper method, specifying the exact text of the heading
+        magazines_list = await self._parse_link_section(
+            container=search_container,
+            header_text_exact="Magazines", 
+            id_pattern=magazine_id_pattern,
+            category_name_for_logging="Magazines Preview"
+        )
+
+        if not magazines_list:
+            logger.warning(f"No magazines preview were successfully parsed from {target_url}.")
+        else:
+            logger.info(f"Successfully parsed {len(magazines_list)} magazines (preview) from {target_url}.")
+
+        return magazines_list

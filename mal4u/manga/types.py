@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional
-from pydantic import BaseModel, HttpUrl, Field, field_validator
+from pydantic import HttpUrl, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import date
 import re
@@ -8,7 +8,7 @@ from mal4u.types import LinkItem, RelatedItem, ExternalLink, CharacterItem, imag
 
 @dataclass
 class MangaSearchResult:
-    """Структура данных для результата поиска манги."""
+    """Data structure for manga search result."""
     mal_id: Optional[int] 
     title: str
     url: str

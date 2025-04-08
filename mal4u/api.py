@@ -4,7 +4,7 @@ import logging
 
 from . import constants
 from .manga import MangaSearchResult, MALMangaParser
-
+from .characters import MALCharactersParser
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,19 @@ class MyAnimeListApi:
         self._session_owner: bool = False
 
         self._manga_parser: Optional[MALMangaParser] = None
+        self._characters_parser: Optional[MALCharactersParser] = None
         # self._anime_parser: Optional[MALAnimeParser] = None
 
         logger.info("A MyAnimeListApi instance has been created.")
 
+    @property
+    def characters(self) -> MALCharactersParser:
+        """Access to the characters parser."""
+        if not self._characters_parser:
+            raise RuntimeError("The session has not been initialized. Call create_session() or use async with.")
+        return self._characters_parser
+    
+    
     @property
     def manga(self) -> MALMangaParser:
         """Access to the manga parser."""
@@ -75,6 +84,8 @@ class MyAnimeListApi:
              raise RuntimeError("Attempting to initialize parsers without an active session.")
         logger.debug("Initialization of sub-parsers (manga)...")
         self._manga_parser = MALMangaParser(self._session)
+        logger.debug("Initialization of sub-parsers (characters)...")
+        self._characters_parser = MALCharactersParser(self._session)
         # self._anime_parser = MALAnimeParser(self._session) # TODO:
 
     async def create_session(self) -> None:

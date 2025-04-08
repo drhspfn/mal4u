@@ -34,7 +34,7 @@ This automatically handles session creation and closing.
 ```python
 import asyncio
 import logging
-from mal_api import MyAnimeListApi, MangaSearchResult, MangaDetails # Assuming types are exported
+from mal4u import MyAnimeListApi, MangaSearchResult, MangaDetails
 
 # Optional: Configure logging for more details
 logging.basicConfig(level=logging.INFO)
@@ -80,7 +80,7 @@ You need to explicitly create and close the session.
 ```python
 import asyncio
 import logging
-from mal_api import MyAnimeListApi
+from mal4u import MyAnimeListApi
 
 logging.basicConfig(level=logging.INFO)
 

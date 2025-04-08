@@ -26,6 +26,7 @@ class urlMixin(BaseModel):
     def validate_url(cls, v) -> HttpUrl:
         if isinstance(v, HttpUrl): return v
         elif isinstance(v, str):
+            print(v)
             if v.startswith('/'):
                 v = constants.MAL_DOMAIN + v
             
