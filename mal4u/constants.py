@@ -8,3 +8,6 @@ MANGA_URL = "/manga.php"
 SEARCH_MANGA_URL = MANGA_URL + "?q={query}"
 MANGA_DETAILS_URL = "/manga/{manga_id}"
 
+
+# --- Anime
+ANIME_URL = "/anime.php"

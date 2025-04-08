@@ -7,16 +7,17 @@ import re
 
 from bs4 import BeautifulSoup, Tag, NavigableString
 from pydantic import ValidationError
+
+from mal4u.search_base import BaseSearchParser
 from .  import constants as mangaConstants
 from mal4u.types import CharacterItem, ExternalLink, LinkItem, RelatedItem
 
 from .types import MangaDetails, MangaSearchResult 
-from ..base import BaseParser
 from .. import constants
 
 logger = logging.getLogger(__name__)
 
-class MALMangaParser(BaseParser):
+class MALMangaParser(BaseSearchParser):
     """A parser to search and retrieve information about manga from MyAnimeList."""
 
     def __init__(self, session: aiohttp.ClientSession):
@@ -423,7 +424,7 @@ class MALMangaParser(BaseParser):
 
     # ---
     
-    def _build_maga_search_url(
+    def _build_manga_search_url(
         self,
         query: str, 
         manga_type:Optional[mangaConstants.MangaType] = None,
@@ -467,141 +468,56 @@ class MALMangaParser(BaseParser):
         return f"{constants.MANGA_URL}?{urlencode(query_list)}"
 
     async def search(
-        self, 
-        query: str, 
+        self,
+        query: str,
         limit: int = 5,
         manga_type:Optional[mangaConstants.MangaType] = None,
         manga_status:Optional[mangaConstants.MangaStatus] = None,
         manga_magazine:Optional[int] = None,
         manga_score:Optional[int] = None,
-        include_genres: Optional[List[int]] = None,  
+        include_genres: Optional[List[int]] = None,
         exclude_genres: Optional[List[int]] = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
     ) -> List[MangaSearchResult]:
         """
         Searches for manga on MyAnimeList using a query, parsing the HTML table of search results.
-
-        Note:
-            When filtering by genres, remember that MyAnimeList also classifies 'Themes' and 'Demographics' 
-            under genres. To include them in the search, simply add their IDs to the `include_genres` or 
-            `exclude_genres` lists.
-
-        Args:
-            query (str): The search query string.
-            limit (int, optional): The maximum number of results to return. Defaults to 5.
-            manga_type (Optional[mangaConstants.MangaType], optional): Filter by manga type (e.g., Manga, Novel). Defaults to None.
-            manga_status (Optional[mangaConstants.MangaStatus], optional): Filter by manga status (e.g., Finished, Publishing). Defaults to None.
-            manga_magazine (Optional[int], optional): Filter by magazine ID. Defaults to None.
-            manga_score (Optional[int], optional): Filter by minimum score. Defaults to None.
-            include_genres (Optional[List[int]], optional): A list of genre IDs that must be included in the manga. Defaults to None.
-            exclude_genres (Optional[List[int]], optional): A list of genre IDs that must not be present in the manga. Defaults to None.
-            start_date (Optional[date], optional): Filter by the earliest publication date (inclusive). Defaults to None.
-            end_date (Optional[date], optional): Filter by the latest publication date (inclusive). Defaults to None.
-
-        Returns:
-            List[MangaSearchResult]: A list of `MangaSearchResult` objects matching the given search criteria.
         """
         if not query:
+            logger.warning("Search query is empty, returning empty list.")
+            return []
+        if limit <= 0:
+            logger.warning("Search limit is zero or negative, returning empty list.")
             return []
 
-        search_url = self._build_maga_search_url(query, manga_type, manga_status, manga_magazine, 
-                                                 manga_score, include_genres, exclude_genres,
-                                                 start_date, end_date)
-        logger.debug(f"Search for manga by URL: {search_url}")
 
-        soup = await self._get_soup(search_url)
-        
-        if not soup:
-            logger.warning(f"Failed to retrieve the contents of the search page for'{query}'")
-            return []
-
-        results: List[MangaSearchResult] = []
-        table = soup.find("div", {"class": "js-categories-seasonal"})
-        if table: table = table.find('table')
-        if not table:
-            logger.warning("Table with search results not found on the page.")
-            return []
-        
-        rows = self._safe_select(table, "tr")
-
-        if not rows or len(rows) < 2:
-             logger.info(f"No result rows found for the query '{query}'.")
+        try:
+            search_url = self._build_manga_search_url(
+                query, manga_type, manga_status, manga_magazine,
+                manga_score, include_genres, exclude_genres,
+                start_date, end_date
+            )
+            logger.debug(f"Searching manga using URL: {search_url}")
+        except ValueError as e:
+             logger.error(f"Failed to build search URL: {e}")
              return []
 
-        first_row_header_check = self._safe_find(rows[0], 'td', class_='fw-b')
-        if first_row_header_check:
-            data_rows = rows[1:]
-            logger.debug(f"Missing header line. Found {len(data_rows)} rows with data.")
-        else:
-            data_rows = rows
-            logger.warning("The first line is not defined as a header, all lines are processed.")
+        soup = await self._get_soup(search_url)
+        if not soup:
+            logger.warning(f"Failed to retrieve or parse search page content for query '{query}' from {search_url}")
+            return []
 
-
-        for row in data_rows:
-            if len(results) >= limit:
-                break
-
-            cells = row.find_all("td")
-
-            if len(cells) < 5:
-                logger.debug(f"Line skip: {len(cells)} cells found, expected 5.")
-                continue
-
-            # Cell 0: Image
-            img_tag = self._safe_find(cells[0], "img")
-            image_url = self._get_attr(img_tag, 'data-src') or self._get_attr(img_tag, 'src')
-
-            # Cell 1: Title, URL, ID, Synopsis
-            title_link_tag = self._safe_find(cells[1], "a", class_="fw-b") 
-            title = self._get_text(self._safe_find(title_link_tag, "strong")) 
-            manga_url = self._get_attr(title_link_tag, 'href')
-            mal_id = self._extract_id_from_url(manga_url, r"/manga/(\d+)/") 
-
-            synopsis_div = self._safe_find(cells[1], "div", class_="pt4")
-            raw_synopsis = self._get_text(synopsis_div)
-            if raw_synopsis.endswith("read more."):
-                 synopsis = raw_synopsis[:-len("read more.")].strip()
-            elif self._safe_find(synopsis_div, 'a', string='read more.'): 
-                 last_a = synopsis_div.find_all('a')[-1] if synopsis_div.find_all('a') else None
-                 if last_a and last_a.get_text(strip=True) == 'read more.':
-                    last_a.extract() 
-                 synopsis = self._get_text(synopsis_div)
-            else:
-                 synopsis = raw_synopsis
-
-            # Cell 2: Type
-            manga_type_text = self._get_text(cells[2]).strip()
-            manga_type = manga_type_text if manga_type_text != '-' else None
-
-            # Cell 3: Toma
-            volumes_text = self._get_text(cells[3]).strip()
-            volumes = self._parse_int(volumes_text) 
-
-            # Cell 4: Assessment
-            score_text = self._get_text(cells[4]).strip()
-            score = self._parse_float(score_text)
-
-            # --- Assembling the result ---
-            if title and manga_url: 
-                result = MangaSearchResult(
-                    mal_id=mal_id,
-                    title=title,
-                    url=manga_url,
-                    image_url=image_url if image_url else None, 
-                    synopsis=synopsis if synopsis else None,
-                    manga_type=manga_type,
-                    chapters=None,
-                    volumes=volumes,
-                    score=score,
-                )
-                results.append(result)
-                logger.debug(f"Successfully extracted manga: ID={mal_id}, Title='{title}'")
-            else:
-                logger.warning("Line skip: failed to retrieve mandatory fields (title/URL).")
-
-        logger.info(f"The search for '{query}' has been completed. Found {len(results)} results (limit {limit}).")
-        return results
+        try:
+            parsed_results = await self._parse_search_results_page(
+                soup=soup,
+                limit=limit,
+                result_model=MangaSearchResult,
+                id_pattern=self.MANGA_ID_PATTERN 
+            )
+            return parsed_results
+        except Exception as e:
+            logger.exception(f"An unexpected error occurred during parsing search results for query '{query}': {e}")
+            return []
 
     
     # --- Metadata, genres, themes etc.
@@ -680,7 +596,7 @@ class MALMangaParser(BaseParser):
             logger.warning(f"Could not find the main 'anime-manga-search' container on {target_url}.")
             return []
 
-        theme_id_pattern = re.compile(r"/genre/(\d+)/") # Темы используют тот же URL /genre/
+        theme_id_pattern = re.compile(r"/genre/(\d+)/")
 
         themes_list = await self._parse_link_section(
             container=search_container,
@@ -717,7 +633,7 @@ class MALMangaParser(BaseParser):
             logger.warning(f"Could not find the main 'anime-manga-search' container on {target_url}.")
             return []
 
-        demographic_id_pattern = re.compile(r"/genre/(\d+)/") # Демография тоже использует /genre/
+        demographic_id_pattern = re.compile(r"/genre/(\d+)/") 
 
         demographics_list = await self._parse_link_section(
             container=search_container,

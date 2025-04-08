@@ -59,3 +59,13 @@ class ExternalLink(urlMixin):
     name: str
 
     
+    
+
+class BaseSearchResult(BaseModel):
+    mal_id: Optional[int] 
+    title: str
+    url: str
+    image_url: Optional[str] = None
+    synopsis: Optional[str] = None
+    score: Optional[float] = None
+    type: Optional[str] = None 

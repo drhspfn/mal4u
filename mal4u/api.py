@@ -2,9 +2,12 @@ from typing import Optional, List
 import aiohttp
 import logging
 
+
+
 from . import constants
 from .manga import MangaSearchResult, MALMangaParser
 from .characters import MALCharactersParser
+from .anime import MALAnimeParser
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +43,7 @@ class MyAnimeListApi:
 
         self._manga_parser: Optional[MALMangaParser] = None
         self._characters_parser: Optional[MALCharactersParser] = None
-        # self._anime_parser: Optional[MALAnimeParser] = None
+        self._anime_parser: Optional[MALAnimeParser] = None
 
         logger.info("A MyAnimeListApi instance has been created.")
 
@@ -58,9 +61,14 @@ class MyAnimeListApi:
         if not self._manga_parser:
             raise RuntimeError("The session has not been initialized. Call create_session() or use async with.")
         return self._manga_parser
+    
+    @property
+    def anime(self) -> MALAnimeParser:
+        """Access to the manga parser."""
+        if not self._anime_parser:
+            raise RuntimeError("The session has not been initialized. Call create_session() or use async with.")
+        return self._anime_parser
 
-    # @property
-    # def anime(self) -> MALAnimeParser: ... # TODO:
 
     async def _create_session(self) -> aiohttp.ClientSession:
         """Creates a new aiohttp session."""
@@ -86,7 +94,8 @@ class MyAnimeListApi:
         self._manga_parser = MALMangaParser(self._session)
         logger.debug("Initialization of sub-parsers (characters)...")
         self._characters_parser = MALCharactersParser(self._session)
-        # self._anime_parser = MALAnimeParser(self._session) # TODO:
+        logger.debug("Initialization of sub-parsers (anime)...")
+        self._anime_parser = MALAnimeParser(self._session)
 
     async def create_session(self) -> None:
         """

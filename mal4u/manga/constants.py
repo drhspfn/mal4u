@@ -1,4 +1,4 @@
-from enum import IntEnum, auto
+from enum import IntEnum
 
 class MangaType(IntEnum):
     MANGA = 1

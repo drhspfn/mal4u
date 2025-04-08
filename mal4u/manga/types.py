@@ -4,20 +4,14 @@ from pydantic import HttpUrl, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import date
 import re
-from mal4u.types import LinkItem, RelatedItem, ExternalLink, CharacterItem, imageUrlMixin, urlMixin
+from mal4u.types import BaseSearchResult, LinkItem, RelatedItem, ExternalLink, CharacterItem, imageUrlMixin, urlMixin
 
-@dataclass
-class MangaSearchResult:
+
+
+class MangaSearchResult(BaseSearchResult):
     """Data structure for manga search result."""
-    mal_id: Optional[int] 
-    title: str
-    url: str
-    image_url: Optional[str] = None
-    synopsis: Optional[str] = None
-    manga_type: Optional[str] = None # Manga, Manhwa, Manhua, Novel, One-shot
     chapters: Optional[int] = None
     volumes: Optional[int] = None
-    score: Optional[float] = None
 
 
 # --- Main Manga Details Model ---

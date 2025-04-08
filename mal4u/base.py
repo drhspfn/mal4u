@@ -106,17 +106,32 @@ class BaseParser:
         except (ValueError, TypeError, AttributeError):
             return default
 
-    def _extract_id_from_url(self, url: str, pattern: str = r"/(\d+)/") -> Optional[int]:
+    def _extract_id_from_url(self, url: Optional[str], pattern: Union[str, re.Pattern] = r"/(\d+)/") -> Optional[int]: # Принимаем строку или скомпилированный паттерн
         """Tries to extract an ID from a URL using a regular expression."""
         if not url:
+            logger.debug("URL is empty, cannot extract ID.")
             return None
-        match = re.search(pattern, url)
-        if match:
-            try:
-                return int(match.group(1))
-            except (ValueError, IndexError):
+        try:
+            match = re.search(pattern, url)
+            if match:
+                try:
+                    id_str = match.group(1)
+                    return int(id_str)
+                except (ValueError, TypeError):
+                    logger.warning(f"Could not convert extracted ID '{id_str}' to int for URL: {url} using pattern: {pattern}")
+                    return None
+                except IndexError:
+                    logger.error(f"Regex pattern '{pattern}' matched URL '{url}' but has no capturing group 1.")
+                    return None
+            else:
+                logger.debug(f"Regex pattern '{pattern}' did not match URL: {url}")
                 return None
-        return None
+        except re.error as e:
+            logger.error(f"Regex error while searching URL '{url}' with pattern '{pattern}': {e}")
+            return None
+        except Exception as e:
+            logger.exception(f"Unexpected error in _extract_id_from_url for URL '{url}': {e}")
+            return None
     
     def _find_nested(self, parent: Optional[Union[BeautifulSoup, Tag]],
                      *search_path: Union[Tuple[str, Dict[str, Any]], str, Tuple[str]]) -> Optional[Tag]:
