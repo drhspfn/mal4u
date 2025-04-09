@@ -1,7 +1,6 @@
-
 # mal4u: Asynchronous MyAnimeList Scraper
 
-[![PyPI version](https://badge.fury.io/py/mal4u.svg)](https://badge.fury.io/py/mal4u) 
+[![PyPI version](https://badge.fury.io/py/mal4u.svg)](https://badge.fury.io/py/mal4u)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 An unofficial, asynchronous Python library for scraping data from [MyAnimeList.net](https://myanimelist.net/). Built with `aiohttp` for efficient network requests and `beautifulsoup4` for HTML parsing. Uses Pydantic for data validation and structuring.
@@ -12,12 +11,25 @@ An unofficial, asynchronous Python library for scraping data from [MyAnimeList.n
 
 *   **Asynchronous:** Leverages `asyncio` and `aiohttp` for non-blocking network I/O.
 *   **Session Management:** Supports both explicit session creation/closing and automatic handling via `async with`.
-*   **Modular Parsers:** Designed with a base parser and specific sub-parsers (currently Manga).
+*   **Modular Parsers:** Designed with a base parser and specific sub-parsers for Manga and Anime.
 *   **Type Hinted:** Fully type-hinted codebase for better developer experience and static analysis.
-*   **Data Validation:** Uses Pydantic models (`MangaSearchResult`, `MangaDetails`, etc.) to structure and validate scraped data.
-*   **Current Capabilities:**
+*   **Data Validation:** Uses Pydantic models (`MangaSearchResult`, `AnimeSearchResult` (planned), `MangaDetails`, `AnimeDetails`, etc.) to structure and validate scraped data.
+*   **Robust Detail Parsing:** Extracts a wide range of information from detail pages, including titles, synopsis, background, stats, related entries, characters, themes, and more for both anime and manga.
+
+## Current Capabilities
+
+*   **Search:**
     *   Search for Manga.
-    *   Get detailed information for a specific Manga by ID.
+    *    Search for Anime
+*   **Details:**
+    *   Get detailed information for a specific Manga by ID (using `MangaDetails` model).
+    *   Get detailed information for a specific Anime by ID (using `AnimeDetails` model).
+*   **Browse/Lists (from overview pages like `manga.php`/`anime.php`):**
+    *   Get available Genres (Anime & Manga).
+    *   Get available Themes (Anime & Manga).
+    *   Get available Demographics (Anime & Manga).
+    *   Get a preview list of Magazines (Manga).
+    *   *(Planned: Get Studios list (Anime)).*
 
 ## Installation
 
@@ -34,7 +46,7 @@ This automatically handles session creation and closing.
 ```python
 import asyncio
 import logging
-from mal4u import MyAnimeListApi, MangaSearchResult, MangaDetails
+from mal4u import MyAnimeListApi, MangaSearchResult, MangaDetails, AnimeDetails
 
 # Optional: Configure logging for more details
 logging.basicConfig(level=logging.INFO)
@@ -42,32 +54,48 @@ logging.getLogger('mal4u').setLevel(logging.DEBUG) # See debug logs from the lib
 
 async def main():
     async with MyAnimeListApi() as api:
-        # Search for manga
-        print("Searching for 'Berserk'...")
-        search_results: list[MangaSearchResult] = await api.manga.search("Berserk", limit=3)
+        # --- Manga Example ---
+        print("Searching for 'Berserk' manga...")
+        search_results: list[MangaSearchResult] = await api.manga.search("Berserk", limit=1)
+        manga_id_to_get = 2 # Default to Berserk if search fails
         if search_results:
-            print(f"Found {len(search_results)} results:")
-            for result in search_results:
-                print(f"- ID: {result.mal_id}, Title: {result.title}, Type: {result.manga_type}, Score: {result.score}")
+            print(f"- Found: {search_results[0].title} (ID: {search_results[0].mal_id})")
+            manga_id_to_get = search_results[0].mal_id
         else:
-            print("Search returned no results.")
+            print("Search returned no results. Using default ID 2.")
+
+        print(f"\nGetting details for Manga ID: {manga_id_to_get}")
+        manga_details: MangaDetails | None = await api.manga.get(manga_id_to_get)
+
+        if manga_details:
+            print(f"  Title: {manga_details.title} ({manga_details.type})")
+            print(f"  Status: {manga_details.status}")
+            print(f"  Score: {manga_details.score} (by {manga_details.scored_by} users)")
+            print(f"  Chapters: {manga_details.chapters}, Volumes: {manga_details.volumes}")
+            print(f"  Synopsis (start): {manga_details.synopsis[:100] if manga_details.synopsis else 'N/A'}...")
+            print(f"  Genres: {[genre.name for genre in manga_details.genres]}")
+        else:
+            print(f"  Could not retrieve details for Manga ID: {manga_id_to_get}")
 
         print("\n" + "="*20 + "\n")
 
-        # Get details for a specific manga (using Berserk's ID: 2)
-        manga_id_to_get = 2
-        print(f"Getting details for Manga ID: {manga_id_to_get}")
-        details: MangaDetails | None = await api.manga.get(manga_id_to_get)
+        # --- Anime Example ---
+        anime_id_to_get = 40852 # Dr. Stone: Stone Wars
+        print(f"Getting details for Anime ID: {anime_id_to_get}")
+        anime_details: AnimeDetails | None = await api.anime.get(anime_id_to_get)
 
-        if details:
-            print(f"Title: {details.title} ({details.type})")
-            print(f"Status: {details.status}")
-            print(f"Score: {details.score} (by {details.scored_by} users)")
-            print(f"Rank: #{details.rank}, Popularity: #{details.popularity}")
-            print(f"Synopsis (first 100 chars): {details.synopsis[:100] if details.synopsis else 'N/A'}...")
-            print(f"Genres: {[genre.name for genre in details.genres]}")
+        if anime_details:
+            print(f"  Title: {anime_details.title} ({anime_details.type})")
+            print(f"  Status: {anime_details.status}")
+            print(f"  Score: {anime_details.score} (by {anime_details.scored_by} users)")
+            print(f"  Episodes: {anime_details.episodes}")
+            print(f"  Premiered: {anime_details.premiered.name if anime_details.premiered else 'N/A'}")
+            print(f"  Synopsis (start): {anime_details.synopsis[:100] if anime_details.synopsis else 'N/A'}...")
+            print(f"  Studios: {[studio.name for studio in anime_details.studios]}")
+            print(f"  Opening Theme(s): {anime_details.opening_themes}")
         else:
-            print(f"Could not retrieve details for Manga ID: {manga_id_to_get}")
+            print(f"  Could not retrieve details for Anime ID: {anime_id_to_get}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -91,13 +119,14 @@ async def main_manual():
         await api.create_session()
         print("Session created.")
 
-        # Perform actions
-        print("Searching for 'Vinland Saga'...")
-        results = await api.manga.search("Vinland Saga", limit=1)
-        if results:
-            print(f"- Found: {results[0].title} (ID: {results[0].mal_id})")
+        # Perform actions (e.g., get anime details)
+        anime_id = 5114 # FMA: Brotherhood
+        print(f"Getting details for Anime ID: {anime_id}")
+        details = await api.anime.get(anime_id)
+        if details:
+            print(f"- Found: {details.title} (Score: {details.score})")
         else:
-            print("Search returned no results.")
+            print(f"- Could not retrieve details for Anime ID: {anime_id}")
 
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -113,10 +142,13 @@ if __name__ == "__main__":
 
 ## TODO
 
-*   [ ] Implement Anime Parser (`search`, `get`).
-*   [ ] Implement Character Parser (`get`).
-*   [ ] Add parsers for other MAL sections (People, Studios, etc.).
-*   [ ] Implement more robust error handling (e.g., custom exceptions).
+*   [x] Search Manga
+*   [x] Get Manga Details (`MangaDetails`)
+*   [x] Search Anime (`AnimeSearchResult`)
+*   [x] Get Anime Details (`AnimeDetails`)
+*   [ ] Get Character Details (`CharacterDetails`)
+*   [ ] Implement Parsers for other MAL sections (People, Studios, etc.).
+*   [ ] Implement more robust error handling (e.g., custom exceptions for 404, parsing failures).
 *   [ ] Add unit and integration tests.
 *   [ ] Improve documentation (detailed docstrings, potentially Sphinx docs).
 *   [ ] Add rate limiting awareness/options.

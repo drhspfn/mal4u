@@ -1,9 +1,9 @@
 from typing import Optional
-from pydantic import Field
+from pydantic import Field, field_validator
 from typing import Optional, List
 from datetime import date
 from mal4u.types import BaseDetails, BaseSearchResult, LinkItem
-
+from .constants import MangaType, MangaStatus
 
 
 class MangaSearchResult(BaseSearchResult):
@@ -22,7 +22,22 @@ class MangaDetails(BaseDetails):
     published_to: Optional[date] = None
     serialization: Optional[LinkItem] = None
     authors: List[LinkItem] = Field(default_factory=list)
-
+    type: Optional[MangaType] = None 
+    status: Optional[MangaStatus] = None 
+    
+    @field_validator('type', mode='before')
+    def validate_type(cls, v:str) -> MangaType:
+        if isinstance(v, MangaType): return v
+        elif isinstance(v, str): return MangaType.from_str(v)
+        elif isinstance(v, int): return MangaType(v)
+        else: return None
+        
+    @field_validator('status', mode='before')
+    def validate_status(cls, v:str) -> MangaStatus:
+        if isinstance(v, MangaStatus): return v
+        elif isinstance(v, str): return MangaStatus.from_str(v)
+        elif isinstance(v, int): return MangaStatus(v)
+        else: return None
 
 '''class MangaDetails(urlMixin, imageUrlMixin):
     """Detailed information about a specific manga."""

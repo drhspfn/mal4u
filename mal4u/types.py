@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 from pydantic import BaseModel, Field, HttpUrl, field_validator, ValidationError
 from typing import Optional
 from mal4u import constants
@@ -37,7 +37,7 @@ class LinkItem(urlMixin):
     """Represents an item with a name, URL, and MAL ID (e.g., genre, author)."""
     mal_id: int
     name: str
-    type: Optional[str] = None 
+    type: Optional[Literal['season', 'producer']] = None 
     
 
 class RelatedItem(urlMixin):
@@ -71,7 +71,7 @@ class BaseSearchResult(BaseModel):
     synopsis: Optional[str] = None
     score: Optional[float] = None
     type: Optional[str] = None 
-    
+     
 
 # -- New base model for parts --
 class BaseDetails(urlMixin, imageUrlMixin):
@@ -81,8 +81,6 @@ class BaseDetails(urlMixin, imageUrlMixin):
     title_english: Optional[str] = None
     title_japanese: Optional[str] = None
     title_synonyms: List[str] = Field(default_factory=list)
-    type: Optional[str] = None # TV, Manga, Movie, Novel, etc.
-    status: Optional[str] = None # Finished Airing, Publishing, etc.
     score: Optional[float] = None
     scored_by: Optional[int] = None
     rank: Optional[int] = None

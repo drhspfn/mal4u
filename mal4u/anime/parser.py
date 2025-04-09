@@ -1,10 +1,12 @@
 from datetime import date
+import re
 from typing import List, Optional
 from urllib.parse import urlencode
 import aiohttp
 import logging
 
 from mal4u.details_base import BaseDetailsParser
+from mal4u.types import LinkItem
 from ..search_base import BaseSearchParser
 from .. import constants
 from .types import AnimeDetails, AnimeSearchResult
@@ -146,3 +148,32 @@ class MALAnimeParser(BaseSearchParser, BaseDetailsParser):
         except Exception as e:
             logger.exception(f"An unexpected error occurred during parsing anime search results for query '{query}': {e}")
             return []
+        
+    async def get_studios(self) -> List[LinkItem]:
+        target_url = constants.ANIME_URL
+        logger.info(f"Fetching studios from {target_url}")
+        
+        soup = await self._get_soup(target_url)
+        if not soup:
+            logger.error(f"Failed to fetch or parse HTML from {target_url} for studios.")
+            return []
+        
+        search_container = self._safe_find(soup, 'div', class_='anime-manga-search')
+        if not search_container:
+            logger.warning(f"Could not find the main 'anime-manga-search' container on {target_url}.")
+            return []
+
+        studio_id_pattern = re.compile(r"/anime/producer/(\d+)/")
+        studios_list = await self._parse_link_section(
+            container=search_container,
+            header_text_exact="Studios",
+            id_pattern=studio_id_pattern,
+            category_name_for_logging="Studios"
+        )
+        
+        if not studios_list:
+            logger.warning(f"No studios were successfully parsed from {target_url}.")
+        else:
+            logger.info(f"Successfully parsed {len(studios_list)} themes from {target_url}.")
+
+        return studios_list

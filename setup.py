@@ -2,10 +2,10 @@ from setuptools import setup, find_packages
 
 setup(
     name='mal4u', 
-    version='0.1.0', 
+    version='0.1.1', 
     packages=find_packages(),  
     install_requires=[  
-        'aiohttp',
+        "aiohttp",
         "pydantic",
         "beautifulsoup4"
     ],
@@ -16,7 +16,7 @@ setup(
     ],
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
-    url='https://github.com/username/my_package',
+    url='https://github.com/drhspfn/mal4u',
     author='drhspfn',
     author_email='jenya.gsta@gmail.com',
     license='MIT',
