@@ -1,10 +1,12 @@
 import re
 import aiohttp
 from bs4 import BeautifulSoup, Tag, NavigableString
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, List, Literal, Optional, Any, Tuple, Union
 import logging
 from datetime import date, datetime
 from pydantic import ValidationError
+
+from mal4u.constants import TopType
 from .types import LinkItem
 
 logger = logging.getLogger(__name__)
@@ -382,5 +384,95 @@ class BaseParser:
                     logger.error(f"Error creating LinkItem for '{name}' ({href}) in '{category_name_for_logging}': {e}", exc_info=True)
             else:
                 logger.debug(f"Skipping link in '{category_name_for_logging}' due to missing data: Text='{full_text}', Href='{href}', Extracted ID='{mal_id}'")
+
+        return results
+    
+    async def _get_top_list_page(
+        self, 
+        endpoint: Literal['/topanime.php', '/topmanga.php'], 
+        top_type: Optional[str] = None,
+        offset: int = 10
+    ) -> Optional[BeautifulSoup]:
+        """Fetches a single page of a MAL top list (Anime/Manga)."""
+        params = {}
+        if offset > 0:
+            params["limit"] = offset
+        if top_type: 
+            params["type"] = top_type
+            
+        url = endpoint 
+        logger.debug(f"Requesting top list page: {url} with offset {offset}")
+        soup = await self._get_soup(url, params=params)
+        if not soup:
+            logger.error(f"Failed to fetch top list page: {url} with offset {offset}")
+            return None
+        return soup
+
+    def _parse_top_list_rows(
+        self,
+        soup: BeautifulSoup,
+        id_pattern: Union[str, re.Pattern]
+    ) -> List[Dict[str, Any]]:
+        """
+        Parses the ranking rows from a single top list page soup.
+        Extracts common fields and the raw info string for type-specific parsing later.
+
+        Args:
+            soup: BeautifulSoup object of the top list page.
+            id_pattern: Regex pattern to extract the MAL ID from the item URL.
+
+        Returns:
+            A list of dictionaries, each containing common data and 'raw_info_text'.
+        """
+        results: List[Dict[str, Any]] = []
+        table = self._safe_find(soup, "table", class_="top-ranking-table")
+        if not table:
+            logger.error("Could not find top ranking table on the page.")
+            return results
+
+        ranking_rows = self._safe_find_all(table, "tr", class_="ranking-list")
+        logger.debug(f"Found {len(ranking_rows)} ranking rows on the page.")
+
+        for row in ranking_rows:
+            try:
+                rank_tag = self._safe_find(row, "span", class_="top-anime-rank-text") # At MAL the class name is the same for anime/manga
+                rank = self._parse_int(self._get_text(rank_tag))
+
+                title_cell = self._safe_find(row, "td", class_="title")
+                title_link = self._find_nested(title_cell, ("div", {"class": "detail"}), "h3", "a")
+                title = self._get_text(title_link)
+                item_url_str = self._get_attr(title_link, 'href')
+                mal_id = self._extract_id_from_url(item_url_str, pattern=id_pattern)
+
+                img_tag = self._find_nested(title_cell, "a", "img") 
+                image_url_str = self._get_attr(img_tag, 'data-src') or self._get_attr(img_tag, 'src')
+
+                score_td = self._safe_find(row, "td", class_="score")
+                score_tag = self._safe_find(score_td, "span", class_="score-label") if score_td else None
+                score = self._parse_float(self._get_text(score_tag))
+
+                info_div = self._safe_find(title_cell, "div", class_="information")
+                raw_info_text = self._get_text(info_div, "").replace('\n', ' ').strip() 
+
+                members_match = re.search(r"([\d,]+)\s+members", raw_info_text, re.IGNORECASE)
+                members = self._parse_int(members_match.group(1)) if members_match else None
+
+                if mal_id is not None and rank is not None and title:
+                    item_data = {
+                        "mal_id": mal_id,
+                        "rank": rank,
+                        "title": title,
+                        "url": item_url_str,
+                        "image_url": image_url_str,
+                        "score": score,
+                        "members": members,
+                        "raw_info_text": raw_info_text
+                    }
+                    results.append(item_data)
+                else:
+                    logger.warning(f"Skipping row due to missing essential common data (Rank: {rank}, ID: {mal_id}, Title: {title})")
+
+            except Exception as e:
+                logger.exception(f"Error parsing ranking row: {row.text[:100]}...")
 
         return results

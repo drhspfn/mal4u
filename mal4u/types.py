@@ -4,6 +4,13 @@ from typing import Optional
 from mal4u import constants
 
 
+class malIdMixin(BaseModel):
+    mal_id: int 
+    
+class optionalMalIdMixin(BaseModel):
+    mal_id: Optional[int] = None 
+    
+    
 class imageUrlMixin(BaseModel):
     image_url: Optional[HttpUrl] = None
     
@@ -33,16 +40,14 @@ class urlMixin(BaseModel):
         else:
             raise ValueError()
 
-class LinkItem(urlMixin):
+class LinkItem(malIdMixin, urlMixin):
     """Represents an item with a name, URL, and MAL ID (e.g., genre, author)."""
-    mal_id: int
     name: str
     type: Optional[Literal['season', 'producer']] = None 
     
 
-class RelatedItem(urlMixin):
+class RelatedItem(malIdMixin, urlMixin):
     """Represents a related anime/manga entry."""
-    mal_id: int
     type: str # e.g., "Manga", "Anime", "Light Novel"
     name: str
 
@@ -63,20 +68,16 @@ class AnimeBroadcast(BaseModel):
     string: Optional[str] = None 
     
 
-class BaseSearchResult(BaseModel):
-    mal_id: Optional[int] 
+class BaseSearchResult(optionalMalIdMixin, urlMixin, imageUrlMixin):
     title: str
-    url: str
-    image_url: Optional[str] = None
     synopsis: Optional[str] = None
     score: Optional[float] = None
     type: Optional[str] = None 
      
 
 # -- New base model for parts --
-class BaseDetails(urlMixin, imageUrlMixin):
+class BaseDetails(malIdMixin,urlMixin, imageUrlMixin):
     """Base model for common fields in Anime/Manga details."""
-    mal_id: int
     title: str
     title_english: Optional[str] = None
     title_japanese: Optional[str] = None

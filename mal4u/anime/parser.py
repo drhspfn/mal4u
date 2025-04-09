@@ -1,15 +1,19 @@
+import asyncio
 from datetime import date
+from math import ceil
 import re
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 import aiohttp
 import logging
+
+from pydantic import ValidationError
 
 from mal4u.details_base import BaseDetailsParser
 from mal4u.types import LinkItem
 from ..search_base import BaseSearchParser
 from .. import constants
-from .types import AnimeDetails, AnimeSearchResult
+from .types import AnimeDetails, AnimeSearchResult, TopAnimeItem
 from . import constants as animeConstants
 
 
@@ -177,3 +181,201 @@ class MALAnimeParser(BaseSearchParser, BaseDetailsParser):
             logger.info(f"Successfully parsed {len(studios_list)} themes from {target_url}.")
 
         return studios_list
+    
+    
+    async def top(
+        self, 
+        limit: int = 50,
+        top_type: Optional[constants.TopType] = None
+    ) -> List[TopAnimeItem]:
+        """Fetches and parses the top anime list from MAL."""
+        
+        def parse_anime_top_info_string(info_text: str) -> Dict[str, Any]:
+            """Parses the raw info string specific to top anime lists."""
+            parsed_info = {"anime_type": None, "episodes": None, "aired_on": None}
+            # TV (25 eps) Oct 2006 - Jul 2007
+            # Movie (1 eps) Aug 2020 - Aug 2020
+            # ONA (12 eps) Jul 2023 - Sep 2023
+            type_eps_match = re.match(r"^(TV Special|TV|OVA|ONA|Movie|Music)\s*(?:\((\d+)\s+eps?\))?", info_text)
+            if type_eps_match:
+                
+                parsed_info["anime_type"] = type_eps_match.group(1)
+                parsed_info["episodes"] = self._parse_int(type_eps_match.group(2))
+                print('parsed_info["anime_type"]: ', parsed_info["anime_type"])
+
+            date_match = re.search(r"(?:eps?\))?\s*([A-Za-z]{3}\s+\d{4}(?:\s+-\s+[A-Za-z]{3}\s+\d{4})?)\s*(?:[\d,]+\s+members)?", info_text)
+            if date_match:
+                parsed_info["aired_on"] = date_match.group(1).strip()
+
+            return parsed_info
+        
+        
+        if limit <= 0: return []
+        
+        type_value: Optional[str] = None
+        if top_type:
+            if constants.TopType.is_manga_specific(top_type):
+                raise ValueError(f"Filter '{top_type.name}' is specific to manga and cannot be used for top anime.")
+            type_value = top_type.value
+        
+        all_results: List[TopAnimeItem] = []
+        page_size = 50
+        num_pages_to_fetch = ceil(limit / page_size)
+        
+        logger.info(f"Fetching top {limit} anime across {num_pages_to_fetch} page(s).")
+        
+        for page_index in range(num_pages_to_fetch):
+            offset = page_index * page_size
+            soup = await self._get_top_list_page("/topanime.php", type_value, offset)
+            if not soup: break
+
+            common_data_list = self._parse_top_list_rows(soup, animeConstants.RE_ANIME_ID) 
+
+            for common_data in common_data_list:
+                if len(all_results) >= limit: break
+
+                specific_info = parse_anime_top_info_string(common_data.get("raw_info_text", ""))
+
+                item_data = {**common_data, **specific_info}
+                try:
+                    item_data.pop("raw_info_text", None)
+                    top_item = TopAnimeItem(**item_data)
+                    all_results.append(top_item)
+                except ValidationError as e:
+                    logger.warning(f"Validation failed for top anime item Rank {common_data.get('rank')} (ID:{common_data.get('mal_id')}): {e}. Data: {item_data}")
+
+            if len(all_results) >= limit: break
+            if page_index < num_pages_to_fetch - 1: await asyncio.sleep(0.5)
+
+        logger.info(f"Finished fetching top anime. Retrieved {len(all_results)} items.")
+        return all_results[:limit]
+    
+    
+    '''async def top(self, limit: int = 50) -> List[TopAnimeItem]:
+        """
+        Fetches and parses the top anime list from MAL.
+
+        Args:
+            limit: The maximum number of top anime to retrieve.
+
+        Returns:
+            A list of TopAnimeItem objects, or an empty list if parsing fails.
+        """
+        if limit <= 0:
+            return []
+        
+        all_results: List[TopAnimeItem] = []
+        page_size = 50 # MAL shows 50 items per page
+        num_pages_to_fetch = ceil(limit / page_size)
+        
+        logger.info(f"Fetching top {limit} anime across {num_pages_to_fetch} page(s).")
+        
+        for page_index in range(num_pages_to_fetch):
+            offset = page_index * page_size
+            url = f"/topanime.php"
+            params = {"limit": offset} if offset > 0 else None
+            
+            logger.debug(f"Requesting top anime page {page_index + 1} (offset: {offset})")
+            soup = await self._get_soup(url, params=params)
+            
+            if not soup:
+                logger.error(f"Failed to fetch top anime page with offset {offset}.")
+                break
+            
+            table = self._safe_find(soup, "table", class_="top-ranking-table")
+            if not table:
+                logger.error(f"Could not find top ranking table on page with offset {offset}.")
+                break
+            
+            ranking_rows = self._safe_find_all(table, "tr", class_="ranking-list")
+            logger.debug(f"Found {len(ranking_rows)} ranking rows on page {page_index + 1}.")
+            
+            for row in ranking_rows:
+                if len(all_results) >= limit:
+                    logger.info(f"Reached requested limit of {limit} items.")
+                    break 
+                
+                try:
+                    rank_tag = self._safe_find(row, "span", class_="top-anime-rank-text")
+                    rank = self._parse_int(self._get_text(rank_tag))
+
+                    title_cell = self._safe_find(row, "td", class_="title")
+                    title_link = self._find_nested(title_cell, ("div", {"class": "detail"}), "h3", "a")
+                    title = self._get_text(title_link)
+                    item_url_str = self._get_attr(title_link, 'href')
+                    mal_id = self._extract_id_from_url(item_url_str, pattern=r"/anime/(\d+)/")
+
+                    img_tag = self._find_nested(title_cell, "a", "img")
+                    image_url_str = self._get_attr(img_tag, 'data-src') or self._get_attr(img_tag, 'src')
+
+                    score_td = self._safe_find(row, "td", class_="score") # Находим td с классом score
+                    score_tag = None
+                    if score_td:
+                        score_tag = self._safe_find(score_td, "span", class_="score-label") 
+                        
+                    score_text = self._get_text(score_tag) 
+                    score = self._parse_float(score_text)
+                    if score is None:
+                        logger.warning(f"Could not parse score from text: '{score_text}' for Rank {rank} (ID: {mal_id})")
+
+                    info_div = self._safe_find(title_cell, "div", class_="information")
+                    info_text = self._get_text(info_div, "").replace('\n', '').strip()
+                    
+                    anime_type = None
+                    episodes = None
+                    aired_on = ""
+                    members = None
+                    
+                    type_eps_match = re.search(r"^(TV|OVA|ONA|Movie|Special|Music)\s*(?:\((\d+)\s+eps?\))?", info_text)
+                    if type_eps_match:
+                        anime_type = type_eps_match.group(1)
+                        episodes = self._parse_int(type_eps_match.group(2))
+                        
+                    # Pattern for extracting dates (captures everything between type/episodes and 'members')
+                    # This is the more complicated part, just extract the string for now
+                    date_match = re.search(r"(?:eps?\))?\s*(.*?)\s*([\d,]+)\s+members", info_text, re.IGNORECASE)
+                    if date_match:
+                        aired_on = date_match.group(1).strip() if date_match.group(1) else ""
+                        members = self._parse_int(date_match.group(2))
+                    else:
+                        # Fallback if there is no 'members' (e.g. anime with no release date)
+                        date_fallback_match = re.search(r"(?:eps?\))?\s*(.*?)\s*$", info_text)
+                        if date_fallback_match and type_eps_match: # Only if type/episodes have been found
+                           aired_on = date_fallback_match.group(1).strip() if date_fallback_match.group(1) else ""
+                           # Try to find participants separately if the pattern above doesn't work
+                           members_match_alt = re.search(r"([\d,]+)\s+members", info_text)
+                           if members_match_alt: members = self._parse_int(members_match_alt.group(1))
+
+                    if mal_id is not None and rank is not None and title:
+                        item_data = {
+                            "mal_id": mal_id,
+                            "rank": rank,
+                            "title": title,
+                            "url": item_url_str,
+                            "image_url": image_url_str,
+                            "score": score,
+                            "anime_type": anime_type,
+                            "episodes": episodes,
+                            "aired_on": aired_on if aired_on else None,
+                            "members": members
+                        }
+                        try:
+                            top_item = TopAnimeItem(**item_data)
+                            all_results.append(top_item)
+                        except ValidationError as e:
+                            logger.warning(f"Validation failed for top anime item Rank {rank} (ID:{mal_id}): {e}. Data: {item_data}")
+                    else:
+                        logger.warning(f"Skipping row due to missing essential data (Rank: {rank}, ID: {mal_id}, Title: {title})")
+                        
+                except Exception as e:
+                    logger.exception(f"Error parsing ranking row: {row.text[:100]}...")
+                    
+                if len(all_results) >= limit: break
+            
+            if len(all_results) >= limit: break
+            
+            if page_index < num_pages_to_fetch - 1:
+                await asyncio.sleep(0.5)
+                
+        logger.info(f"Finished fetching top anime. Retrieved {len(all_results)} items.")
+        return all_results[:limit]'''

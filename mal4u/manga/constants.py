@@ -1,5 +1,7 @@
 from enum import IntEnum
 
+RE_MANGA_ID = r"/manga/(\d+)/" 
+
 class MangaType(IntEnum):
     UNKNOWN = 0 
     MANGA = 1

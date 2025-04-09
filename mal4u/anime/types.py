@@ -2,7 +2,7 @@ from typing import Optional
 from pydantic import Field, field_validator
 from typing import Optional, List
 from datetime import date
-from mal4u.types import AnimeBroadcast, BaseDetails, BaseSearchResult, ExternalLink, LinkItem
+from mal4u.types import AnimeBroadcast, BaseDetails, BaseSearchResult, ExternalLink, LinkItem, imageUrlMixin, malIdMixin, urlMixin
 from .constants import AnimeType, AnimeStatus, AnimeRated
 
 class AnimeSearchResult(BaseSearchResult):
@@ -50,4 +50,22 @@ class AnimeDetails(BaseDetails):
         if isinstance(v, AnimeStatus): return v
         elif isinstance(v, str): return AnimeStatus.from_str(v)
         elif isinstance(v, int): return AnimeStatus(v)
+        else: return None
+        
+        
+class TopAnimeItem(malIdMixin, urlMixin, imageUrlMixin):
+    """Represents an item in the MAL Top Anime list."""
+    rank: int
+    title: str
+    score: Optional[float] = None
+    anime_type: Optional[AnimeType] = None
+    episodes: Optional[int] = None
+    aired_on: Optional[str] = None # String representation like "Oct 2006 - Jul 2007"
+    members: Optional[int] = None
+    
+    @field_validator('anime_type', mode='before')
+    def validate_anime_type(cls, v:str) -> AnimeType:
+        if isinstance(v, AnimeType): return v
+        elif isinstance(v, str): return AnimeType.from_str(v)
+        elif isinstance(v, int): return AnimeType(v)
         else: return None

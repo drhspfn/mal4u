@@ -1,14 +1,17 @@
+import asyncio
 from datetime import date
-from typing import List, Optional
+from math import ceil
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 import aiohttp
 import logging
 import re
+from pydantic import ValidationError
 from mal4u.details_base import BaseDetailsParser
 from mal4u.search_base import BaseSearchParser
 from .  import constants as mangaConstants
 from mal4u.types import LinkItem
-from .types import MangaDetails, MangaSearchResult 
+from .types import MangaDetails, MangaSearchResult, TopMangaItem 
 from .. import constants
 
 logger = logging.getLogger(__name__)
@@ -151,6 +154,79 @@ class MALMangaParser(BaseSearchParser, BaseDetailsParser):
             logger.exception(f"An unexpected error occurred during parsing search results for query '{query}': {e}")
             return []
  
+    # ---
+    
+    async def top(
+        self, 
+        limit: int = 50,
+        top_type: Optional[constants.TopType] = None
+    ) -> List[TopMangaItem]:
+        """Fetches and parses the top manga list from MAL."""
+        
+        def parse_manga_top_info_string(info_text: str) -> Dict[str, Any]:
+            """Parses the raw info string specific to top manga lists."""
+            parsed_info = {"manga_type": None, "volumes": None, "published_on": None}
+            # Manga (18 vols) Aug 1989 - Mar 1995
+            # Novel (? vols) Aug 2006 - ?
+            # One-shot (1 ch) 2005
+            type_match = re.match(r"^(Manga|Novel|Light Novel|One-shot|Manhwa|Manhua|Doujinshi)\s*(?:\(([\d?]+)\s+vols?\))?\s*(?:\(([\d?]+)\s+chaps?\))?", info_text)
+            if type_match:
+                parsed_info["manga_type"] = type_match.group(1)
+
+                parsed_info["volumes"] = self._parse_int(type_match.group(2).strip('?')) if type_match.group(2) else None
+                parsed_info["chapters"] = self._parse_int(type_match.group(3).strip('?')) if type_match.group(3) else None
+
+            date_match = re.search(r"(?:vols?\))?(?:\s*\(?[\d?]+\s+chaps?\)?\))?\s*([A-Za-z]{3}\s+\d{4}(?:\s+-\s+[A-Za-z]{3}\s+\d{4})?)\s*(?:[\d,]+\s+members)?", info_text)
+            if date_match:
+                parsed_info["published_on"] = date_match.group(1).strip()
+            else:
+    
+                date_fallback_match = re.search(r"^(?:Manga|Novel|Light Novel|One-shot|Manhwa|Manhua|Doujinshi)\s*([A-Za-z]{3}\s+\d{4}(?:\s+-\s+[A-Za-z]{3}\s+\d{4})?|\d{4})\s*(?:[\d,]+\s+members)?", info_text)
+                if date_fallback_match:
+                    parsed_info["published_on"] = date_fallback_match.group(1).strip()
+
+
+            return parsed_info
+    
+        
+        if limit <= 0: return []
+        type_value: Optional[str] = None
+        if top_type:
+            if constants.TopType.is_anime_specific(top_type):
+                raise ValueError(f"Filter '{top_type.name}' is specific to anime and cannot be used for top manga.")
+            type_value = top_type.value
+
+        all_results: List[TopMangaItem] = []
+        page_size = 50
+        num_pages_to_fetch = ceil(limit / page_size)
+
+        logger.info(f"Fetching top {limit} manga across {num_pages_to_fetch} page(s).")
+
+        for page_index in range(num_pages_to_fetch):
+            offset = page_index * page_size
+            soup = await self._get_top_list_page("/topmanga.php", type_value, offset) 
+            if not soup: break
+
+            common_data_list = self._parse_top_list_rows(soup, mangaConstants.RE_MANGA_ID) 
+
+            for common_data in common_data_list:
+                if len(all_results) >= limit: break
+
+                specific_info = parse_manga_top_info_string(common_data.get("raw_info_text", ""))
+                item_data = {**common_data, **specific_info}
+
+                try:
+                    item_data.pop("raw_info_text", None)
+                    top_item = TopMangaItem(**item_data)
+                    all_results.append(top_item)
+                except ValidationError as e:
+                    logger.warning(f"Validation failed for top manga item Rank {common_data.get('rank')} (ID:{common_data.get('mal_id')}): {e}. Data: {item_data}")
+
+            if len(all_results) >= limit: break
+            if page_index < num_pages_to_fetch - 1: await asyncio.sleep(0.5)
+
+        logger.info(f"Finished fetching top manga. Retrieved {len(all_results)} items.")
+        return all_results[:limit]
     
     # --- Metadata, genres, themes etc.
     async def get_genres(self, include_explicit: bool = False) -> List[LinkItem]:
@@ -321,3 +397,5 @@ class MALMangaParser(BaseSearchParser, BaseDetailsParser):
             logger.info(f"Successfully parsed {len(magazines_list)} magazines (preview) from {target_url}.")
 
         return magazines_list
+    
+    
