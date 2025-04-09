@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import BaseModel, HttpUrl, field_validator, ValidationError
+from typing import Dict, List, Optional
+from pydantic import BaseModel, Field, HttpUrl, field_validator, ValidationError
 from typing import Optional
 from mal4u import constants
 
@@ -26,7 +26,6 @@ class urlMixin(BaseModel):
     def validate_url(cls, v) -> HttpUrl:
         if isinstance(v, HttpUrl): return v
         elif isinstance(v, str):
-            print(v)
             if v.startswith('/'):
                 v = constants.MAL_DOMAIN + v
             
@@ -38,6 +37,7 @@ class LinkItem(urlMixin):
     """Represents an item with a name, URL, and MAL ID (e.g., genre, author)."""
     mal_id: int
     name: str
+    type: Optional[str] = None 
     
 
 class RelatedItem(urlMixin):
@@ -47,18 +47,20 @@ class RelatedItem(urlMixin):
     name: str
 
 
-class CharacterItem(urlMixin, imageUrlMixin):
+class CharacterItem(LinkItem, imageUrlMixin):
     """Represents a character listed on the manga page."""
-    mal_id: int
-    name: str
-    role: str # e.g., "Main", "Supporting"
-    
+    role: str
 
 class ExternalLink(urlMixin):
     """Represents an external link (e.g., Wikipedia, Official Site)."""
     name: str
 
-    
+class AnimeBroadcast(BaseModel):
+    """Represents broadcast information."""
+    day: Optional[str] = None
+    time: Optional[str] = None
+    timezone: Optional[str] = None
+    string: Optional[str] = None 
     
 
 class BaseSearchResult(BaseModel):
@@ -69,3 +71,30 @@ class BaseSearchResult(BaseModel):
     synopsis: Optional[str] = None
     score: Optional[float] = None
     type: Optional[str] = None 
+    
+
+# -- New base model for parts --
+class BaseDetails(urlMixin, imageUrlMixin):
+    """Base model for common fields in Anime/Manga details."""
+    mal_id: int
+    title: str
+    title_english: Optional[str] = None
+    title_japanese: Optional[str] = None
+    title_synonyms: List[str] = Field(default_factory=list)
+    type: Optional[str] = None # TV, Manga, Movie, Novel, etc.
+    status: Optional[str] = None # Finished Airing, Publishing, etc.
+    score: Optional[float] = None
+    scored_by: Optional[int] = None
+    rank: Optional[int] = None
+    popularity: Optional[int] = None
+    members: Optional[int] = None
+    favorites: Optional[int] = None
+    synopsis: Optional[str] = None
+    background: Optional[str] = None
+    genres: List[LinkItem] = Field(default_factory=list)
+    themes: List[LinkItem] = Field(default_factory=list)
+    demographics: List[LinkItem] = Field(default_factory=list)
+    related: Dict[str, List[RelatedItem]] = Field(default_factory=dict)
+    characters: List[CharacterItem] = Field(default_factory=list)
+    external_links: List[ExternalLink] = Field(default_factory=list)
+    official_site: Optional[HttpUrl] = None 

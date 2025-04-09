@@ -11,3 +11,4 @@ MANGA_DETAILS_URL = "/manga/{manga_id}"
 
 # --- Anime
 ANIME_URL = "/anime.php"
+ANIME_DETAILS_URL = "/anime/{anime_id}"

@@ -1,10 +1,8 @@
-from dataclasses import dataclass
 from typing import Optional
-from pydantic import HttpUrl, Field, field_validator
-from typing import Optional, List, Dict, Any
+from pydantic import Field
+from typing import Optional, List
 from datetime import date
-import re
-from mal4u.types import BaseSearchResult, LinkItem, RelatedItem, ExternalLink, CharacterItem, imageUrlMixin, urlMixin
+from mal4u.types import BaseDetails, BaseSearchResult, LinkItem
 
 
 
@@ -16,7 +14,17 @@ class MangaSearchResult(BaseSearchResult):
 
 # --- Main Manga Details Model ---
 
-class MangaDetails(urlMixin, imageUrlMixin):
+class MangaDetails(BaseDetails):
+    """Detailed information about a specific manga."""
+    volumes: Optional[int] = None
+    chapters: Optional[int] = None
+    published_from: Optional[date] = None
+    published_to: Optional[date] = None
+    serialization: Optional[LinkItem] = None
+    authors: List[LinkItem] = Field(default_factory=list)
+
+
+'''class MangaDetails(urlMixin, imageUrlMixin):
     """Detailed information about a specific manga."""
     mal_id: int
     title: str
@@ -80,4 +88,4 @@ class MangaDetails(urlMixin, imageUrlMixin):
         if isinstance(value, date):
             return value
         # Add specific parsing logic here if the BaseParser helper isn't used upstream
-        return None # Or raise ValueError
+        return None # Or raise ValueError'''

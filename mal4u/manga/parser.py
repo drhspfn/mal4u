@@ -8,6 +8,7 @@ import re
 from bs4 import BeautifulSoup, Tag, NavigableString
 from pydantic import ValidationError
 
+from mal4u.details_base import BaseDetailsParser
 from mal4u.search_base import BaseSearchParser
 from .  import constants as mangaConstants
 from mal4u.types import CharacterItem, ExternalLink, LinkItem, RelatedItem
@@ -17,12 +18,43 @@ from .. import constants
 
 logger = logging.getLogger(__name__)
 
-class MALMangaParser(BaseSearchParser):
+class MALMangaParser(BaseSearchParser, BaseDetailsParser):
     """A parser to search and retrieve information about manga from MyAnimeList."""
 
     def __init__(self, session: aiohttp.ClientSession):
         super().__init__(session)
         logger.info("Manga parser initialized")
+
+
+    async def get_test(self, manga_id: int) -> Optional[MangaDetails]:
+        """
+        Fetches and parses the details page for a specific manga ID.
+        """
+        if not manga_id or manga_id <= 0:
+            logger.error("Invalid manga ID provided.")
+            return None
+
+        details_url = constants.MANGA_DETAILS_URL.format(manga_id=manga_id)
+        logger.info(f"Fetching manga details for ID {manga_id} from {details_url}")
+
+        soup = await self._get_soup(details_url)
+        if not soup:
+            logger.error(f"Failed to fetch or parse HTML for manga ID {manga_id} from {details_url}")
+            return None
+
+        logger.info(f"Successfully fetched HTML for manga ID {manga_id}. Starting parsing.")
+        try:
+            parsed_details = await self._parse_details_page(
+                soup=soup,
+                item_id=manga_id,
+                item_url=details_url,
+                item_type="manga",    
+                details_model=MangaDetails
+            )
+            return parsed_details
+        except Exception as e:
+            logger.exception(f"Top-level exception during parsing details for manga ID {manga_id}: {e}")
+            return None
 
 
     async def get(self, manga_id: int) -> Optional[MangaDetails]:

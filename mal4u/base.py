@@ -106,7 +106,7 @@ class BaseParser:
         except (ValueError, TypeError, AttributeError):
             return default
 
-    def _extract_id_from_url(self, url: Optional[str], pattern: Union[str, re.Pattern] = r"/(\d+)/") -> Optional[int]: # Принимаем строку или скомпилированный паттерн
+    def _extract_id_from_url(self, url: Optional[str], pattern: Union[str, re.Pattern] = r"/(\d+)/") -> Optional[int]:
         """Tries to extract an ID from a URL using a regular expression."""
         if not url:
             logger.debug("URL is empty, cannot extract ID.")
@@ -159,10 +159,26 @@ class BaseParser:
                 return None
         return current_element
     
-    def _parse_link_list(self, start_node: Optional[Tag], stop_at_tag: str = 'div') -> List[LinkItem]:
+    def _parse_link_list(
+        self,
+        start_node: Optional[Tag],
+        stop_at_tag: str = 'div',
+        parent_limit: Optional[Tag] = None,
+        pattern: Union[str, re.Pattern] = r"/(?:genre|magazine|people)/(\d+)/"
+    ) -> List[LinkItem]:
         """
         Parses a list of <a> tags following a start_node until a stop_at_tag is encountered.
-        Expects <a> tags with href containing '/manga/genre/id/Name' or '/people/id/Name'.
+        Extracts MAL ID from the href using the provided regex pattern.
+
+        Args:
+            start_node: The Tag element after which to start searching for <a> tags.
+            stop_at_tag: The name of the tag that signifies the end of the list (e.g., 'div', 'span', 'h2').
+            pattern: The regex pattern (string or compiled) used to extract the MAL ID
+                     from the href attribute. It MUST contain at least one capturing group
+                     for the ID. Defaults to a common pattern for genre/magazine/people.
+
+        Returns:
+            A list of LinkItem objects.
         """
         links = []
         if not start_node:
@@ -171,29 +187,34 @@ class BaseParser:
         current_node = start_node.next_sibling
         while current_node:
             if isinstance(current_node, Tag):
+                if current_node.name == stop_at_tag or current_node.name == 'h2':
+                    break
                 if current_node.name == 'a':
                     href = self._get_attr(current_node, 'href')
                     name = self._get_text(current_node)
                     mal_id = None
+
                     if href:
-                         # Try common patterns
-                         match_genre = re.search(r"/(?:genre|magazine|people)/(\d+)/", href)
-                         if match_genre:
-                             mal_id = self._parse_int(match_genre.group(1))
+                        mal_id = self._extract_id_from_url(href, pattern=pattern)
 
                     if name and href and mal_id is not None:
                         try:
-                            links.append(LinkItem(mal_id=mal_id, name=name, url=href))
+                            link_type = None
+                            if "/anime/producer/" in href: link_type = "producer"
+                            elif "/people/" in href: link_type = "person"
+                            elif "/character/" in href: link_type = "character"
+                            elif "/manga/magazine/" in href: link_type = "magazine"
+                            elif "/genre/" in href: link_type = "genre" 
+
+                            links.append(LinkItem(mal_id=mal_id, name=name, url=href, type=link_type))
                         except ValidationError as e:
                             logger.warning(f"Skipping invalid link item: Name='{name}', URL='{href}', ID='{mal_id}'. Error: {e}")
                     else:
-                         logger.debug(f"Skipping link node without valid name, href, or extractable ID: {current_node}")
+                         logger.debug(f"Skipping link node: Name='{name}', Href='{href}', Extracted ID='{mal_id}' using pattern '{pattern}'")
 
-                elif current_node.name == stop_at_tag: # Stop if we hit the next block element
-                    break
-            # Move to the next sibling
             current_node = current_node.next_sibling
         return links
+
 
     def _parse_mal_date_range(self, date_str: Optional[str]) -> Tuple[Optional[date], Optional[date]]:
         """

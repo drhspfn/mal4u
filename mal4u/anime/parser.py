@@ -4,15 +4,16 @@ from urllib.parse import urlencode
 import aiohttp
 import logging
 
+from mal4u.details_base import BaseDetailsParser
 from ..search_base import BaseSearchParser
 from .. import constants
-from .types import AnimeSearchResult
+from .types import AnimeDetails, AnimeSearchResult
 from . import constants as animeConstants
 
 
 logger = logging.getLogger(__name__)
 
-class MALAnimeParser(BaseSearchParser):
+class MALAnimeParser(BaseSearchParser, BaseDetailsParser):
     def __init__(self, session: aiohttp.ClientSession):
         super().__init__(session)
         logger.info("Anime parser initialized")
@@ -56,6 +57,37 @@ class MALAnimeParser(BaseSearchParser):
         query_list = list(query_params.items()) + genre_pairs
 
         return f"{constants.ANIME_URL}?{urlencode(query_list)}"
+    
+    
+    async def get(self, anime_id: int) -> Optional[AnimeDetails]:
+        """
+        Fetches and parses the details page for a specific anime ID.
+        """
+        if not anime_id or anime_id <= 0:
+            logger.error("Invalid anime ID provided.")
+            return None
+
+        details_url = constants.ANIME_DETAILS_URL.format(anime_id=anime_id)
+        logger.info(f"Fetching anime details for ID {anime_id} from {details_url}")
+
+        soup = await self._get_soup(details_url)
+        if not soup:
+            logger.error(f"Failed to fetch or parse HTML for anime ID {anime_id} from {details_url}")
+            return None
+
+        logger.info(f"Successfully fetched HTML for anime ID {anime_id}. Starting parsing.")
+        try:
+            parsed_details = await self._parse_details_page(
+                soup=soup,
+                item_id=anime_id,
+                item_url=details_url,
+                item_type="anime",
+                details_model=AnimeDetails 
+            )
+            return parsed_details
+        except Exception as e:
+            logger.exception(f"Top-level exception during parsing details for anime ID {anime_id}: {e}")
+            return None
     
     async def search(
         self,
