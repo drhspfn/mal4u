@@ -1,7 +1,5 @@
 from enum import IntEnum
 
-RE_ANIME_ID = r"/anime/(\d+)/" 
-
 class AnimeType(IntEnum):
     UNKNOWN = 0 
     TV = 1      

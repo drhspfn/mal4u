@@ -1,22 +1,31 @@
 # --- Base
 from enum import StrEnum
+from re import compile
 
 
 MAL_DOMAIN = "https://myanimelist.net"
 DEFAULT_TIMEOUT = 10
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+MAL_PAGE_SIZE = 50
+
 
 # --- Manga
 MANGA_URL = "/manga.php"
-SEARCH_MANGA_URL = MANGA_URL + "?q={query}"
 MANGA_DETAILS_URL = "/manga/{manga_id}"
-
+MANGA_ID_PATTERN = compile(r"/manga/(\d+)(?:/[^/]*)?")
 
 # --- Anime
 ANIME_URL = "/anime.php"
 ANIME_DETAILS_URL = "/anime/{anime_id}"
+ANIME_ID_PATTERN = compile(r"/anime/(\d+)(?:/[^/]*)?")
+
+# --- Character
+CHARACTER_URL = "/character.php"
+ANIME_DETAILS_URL = "/character/{character_id}"
+CHARACTER_ID_PATTERN = compile(r"/character/(\d+)(?:/[^/]*)?")
 
 
+PERSON_ID_PATTERN = compile(r"/people/(\d+)(?:/[^/]*)?")
 
 
 class TopType(StrEnum):
@@ -72,3 +81,13 @@ class TopType(StrEnum):
             TopType.MOST_POPULAR,
             TopType.MOST_FAVORITED,
         }
+
+
+class LinkItemType(StrEnum):
+    SEASON = "season"
+    PERSON = "person"
+    GENRE = "genre"
+    PRODUCER = "producer"
+    MAGAZINE = "magazine"
+    ANIME = "anime"
+    MANGA = "manga"

@@ -1,9 +1,9 @@
 import re
 import logging
-from typing import List, Optional, Type, TypeVar
-from bs4 import BeautifulSoup, Tag
-
-from .base import BaseParser # Импортируем ваш BaseParser
+from typing import List, Type, TypeVar
+from bs4 import BeautifulSoup
+from mal4u.constants import ANIME_ID_PATTERN, MANGA_ID_PATTERN
+from .base import BaseParser
 from .manga.types import BaseSearchResult
 from pydantic import ValidationError
 
@@ -16,10 +16,6 @@ class BaseSearchParser(BaseParser):
     Base class for MAL parsers that handle search results.
     Provides common logic for parsing search result tables.
     """
-
-    # Patterns for ID extraction (can be overridden in child classes)
-    ANIME_ID_PATTERN = re.compile(r"/anime/(\d+)/")
-    MANGA_ID_PATTERN = re.compile(r"/manga/(\d+)/")
 
     async def _parse_search_results_page(
         self,
@@ -134,10 +130,10 @@ class BaseSearchParser(BaseParser):
                         "synopsis": synopsis,
                         "type": item_type,
                         "score": score,
-                        "episodes": item_count if id_pattern == self.ANIME_ID_PATTERN else None,
-                        "volumes": item_count if id_pattern == self.MANGA_ID_PATTERN else None,
-                        "members": members if id_pattern == self.ANIME_ID_PATTERN else None,
-                        "chapters": None if id_pattern == self.MANGA_ID_PATTERN else None,
+                        "episodes": item_count if id_pattern == ANIME_ID_PATTERN else None,
+                        "volumes": item_count if id_pattern == MANGA_ID_PATTERN else None,
+                        "members": members if id_pattern == ANIME_ID_PATTERN else None,
+                        "chapters": None if id_pattern == MANGA_ID_PATTERN else None,
                     }
 
                     try:

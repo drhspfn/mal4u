@@ -13,23 +13,25 @@ An unofficial, asynchronous Python library for scraping data from [MyAnimeList.n
 *   **Session Management:** Supports both explicit session creation/closing and automatic handling via `async with`.
 *   **Modular Parsers:** Designed with a base parser and specific sub-parsers for Manga and Anime.
 *   **Type Hinted:** Fully type-hinted codebase for better developer experience and static analysis.
-*   **Data Validation:** Uses Pydantic models (`MangaSearchResult`, `AnimeSearchResult` (planned), `MangaDetails`, `AnimeDetails`, etc.) to structure and validate scraped data.
+*   **Data Validation:** Uses Pydantic models (`MangaSearchResult`, `AnimeSearchResult`, `MangaDetails`, `AnimeDetails`, etc.) to structure and validate scraped data.
 *   **Robust Detail Parsing:** Extracts a wide range of information from detail pages, including titles, synopsis, background, stats, related entries, characters, themes, and more for both anime and manga.
 
 ## Current Capabilities
 
 *   **Search:**
     *   Search for Manga.
-    *    Search for Anime
+    *   Search for Anime.
+    *   Search for Character.
 *   **Details:**
     *   Get detailed information for a specific Manga by ID (using `MangaDetails` model).
     *   Get detailed information for a specific Anime by ID (using `AnimeDetails` model).
+    *   Get detailed information for a specific Character by ID (using `CharacterDetails` model).
 *   **Browse/Lists (from overview pages like `manga.php`/`anime.php`):**
     *   Get available Genres (Anime & Manga).
     *   Get available Themes (Anime & Manga).
     *   Get available Demographics (Anime & Manga).
     *   Get a preview list of Magazines (Manga).
-    *   *(Planned: Get Studios list (Anime)).*
+    *   Get Studios list (Anime)
 
 ## Installation
 
@@ -146,7 +148,8 @@ if __name__ == "__main__":
 *   [x] Get Manga Details (`MangaDetails`)
 *   [x] Search Anime (`AnimeSearchResult`)
 *   [x] Get Anime Details (`AnimeDetails`)
-*   [ ] Get Character Details (`CharacterDetails`)
+*   [x] Search Character
+*   [x] Get Character Details (`CharacterDetails`)
 *   [ ] Implement Parsers for other MAL sections (People, Studios, etc.).
 *   [ ] Implement more robust error handling (e.g., custom exceptions for 404, parsing failures).
 *   [ ] Add unit and integration tests.
