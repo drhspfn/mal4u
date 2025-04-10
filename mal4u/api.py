@@ -1,11 +1,8 @@
 from typing import Optional, List
 import aiohttp
 import logging
-
-
-
 from . import constants
-from .manga import MangaSearchResult, MALMangaParser
+from .manga import MALMangaParser
 from .characters import MALCharactersParser
 from .anime import MALAnimeParser
 
@@ -134,13 +131,13 @@ class MyAnimeListApi:
 
     # --- Methods-Facades ---
 
-    async def search_manga(self, query: str, limit: int = 5) -> List[MangaSearchResult]:
-        """
-        Searches for manga using a manga parser.
+    # async def search_manga(self, query: str, limit: int = 5) -> List[MangaSearchResult]:
+    #     """
+    #     Searches for manga using a manga parser.
 
-        An example of using a facade. Make sure the session is active.
-        """
-        if not self._session or self._session.closed:
-            raise RuntimeError("The session is not active. Use 'async with' or call 'await api.create_session()' before using it.")
+    #     An example of using a facade. Make sure the session is active.
+    #     """
+    #     if not self._session or self._session.closed:
+    #         raise RuntimeError("The session is not active. Use 'async with' or call 'await api.create_session()' before using it.")
 
-        return await self.manga.search(query, limit)
+    #     return await self.manga.search(query, limit)

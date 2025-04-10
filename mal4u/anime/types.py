@@ -1,11 +1,10 @@
 from typing import Optional
-from pydantic import Field, field_validator
+from pydantic import Field
 from typing import Optional, List
 from datetime import date
 from .mixins import animeRatedMixin, animeStatusMixin, animeTypeMixin
 from mal4u.types import AnimeBroadcast, BaseDetails, BaseSearchResult, ExternalLink, LinkItem
 from mal4u.mixins import imageUrlMixin, malIdMixin, urlMixin
-from .constants import AnimeType, AnimeStatus, AnimeRated
 
 class AnimeSearchResult(BaseSearchResult, animeTypeMixin):
     """Represents a single anime item in MAL search results."""

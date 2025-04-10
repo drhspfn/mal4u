@@ -6,3 +6,4 @@ dist/
 build/
 mal4u.egg-info/
 .vscode/
+.env

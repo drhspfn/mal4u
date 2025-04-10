@@ -1,14 +1,13 @@
 import asyncio
 from math import ceil
 import re
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from urllib.parse import urlencode
 import aiohttp
 import logging
-
 from bs4 import BeautifulSoup, Tag, NavigableString
 from pydantic import ValidationError
-
+from mal4u.types import LinkItem
 from .types import CharacterDetails, CharacterSearchResult, RelatedMediaItem, VoiceActorItem
 from mal4u.details_base import BaseDetailsParser
 from mal4u.search_base import BaseSearchParser
@@ -149,6 +148,234 @@ class MALCharactersParser(BaseSearchParser, BaseDetailsParser):
         if not soup:
             return None
         return self._parse_character_details_page(soup, character_id, url)
+
+    def _parse_character_page_rows(
+        self,
+        soup: BeautifulSoup,
+        mode: Literal['top', 'search']
+    ) -> List[Dict[str, Any]]:
+        """
+        Parses character rows from a single page soup based on the mode.
+        Returns a list of dictionaries with raw data.
+        """
+        results_data: List[Dict[str, Any]] = []
+        id_pattern = constants.CHARACTER_ID_PATTERN
+
+        if mode == 'top':
+            table = self._safe_find(
+                soup, "table", class_="characters-favorites-ranking-table")
+            if not table:
+                logger.warning("Top characters table not found.")
+                return results_data
+            rows = self._safe_find_all(table, "tr", class_="ranking-list")
+            logger.debug(f"[Top Mode] Found {len(rows)} ranking rows.")
+
+            for row in rows:
+                try:
+                    rank_tag = self._safe_find(
+                        row, "span", class_="pepole-rank-text")
+                    rank = self._parse_int(self._get_text(rank_tag))
+
+                    people_cell = self._safe_find(row, "td", class_="people")
+                    if not people_cell:
+                        continue
+
+                    img_link = self._safe_find(people_cell, "a", class_="fl-l")
+                    img_tag = self._safe_find(img_link, "img")
+                    image_url_str = self._get_attr(
+                        img_tag, 'data-src') or self._get_attr(img_tag, 'src')
+
+                    info_div = self._safe_find(
+                        people_cell, "div", class_="information")
+                    name_link = self._safe_find(info_div, "a")
+                    name = self._get_text(name_link)
+                    url = self._get_attr(name_link, 'href')
+                    mal_id = self._extract_id_from_url(url, id_pattern)
+                    jp_name_tag = self._safe_find(
+                        info_div, "span", class_="fn-grey6")
+                    jp_name = self._get_text(jp_name_tag).strip(
+                        '()') if jp_name_tag else None
+
+                    # --- FIX: Corrected Animeography/Mangaography Parsing for Top Mode ---
+                    animeography_items: List[RelatedMediaItem] = []
+                    animeo_cell = self._safe_find(
+                        row, "td", class_="animeography")
+                    if animeo_cell:
+                        # Find all 'div' with class 'title' inside the cell first
+                        title_divs = self._safe_find_all(
+                            animeo_cell, "div", class_="title")
+                        for title_div in title_divs:
+                            # Find 'a' inside 'div.title'
+                            link = self._safe_find(title_div, "a")
+                            if link:
+                                a_url = self._get_attr(link, "href")
+                                a_name = self._get_text(link)
+                                a_id = self._extract_id_from_url(
+                                    a_url, constants.ANIME_ID_PATTERN)
+                                if a_id and a_name and a_url:
+                                    try:
+                                        # Ensure URL is absolute
+                                        abs_a_url = f"https://myanimelist.net{a_url}" if a_url.startswith(
+                                            '/') else a_url
+                                        animeography_items.append(
+                                            LinkItem(mal_id=a_id, name=a_name, url=abs_a_url, type="anime"))
+                                    except ValidationError as e:
+                                        logger.warning(
+                                            f"Skipping invalid animeography link: Name='{a_name}', URL='{a_url}'. Error: {e}")
+
+                    mangaography_items: List[LinkItem] = []
+                    mangao_cell = self._safe_find(
+                        row, "td", class_="mangaography")
+                    if mangao_cell:
+                        # Find all 'div' with class 'title' inside the cell first
+                        title_divs = self._safe_find_all(
+                            mangao_cell, "div", class_="title")
+                        for title_div in title_divs:
+                            # Find 'a' inside 'div.title'
+                            link = self._safe_find(title_div, "a")
+                            if link:
+                                m_url = self._get_attr(link, "href")
+                                m_name = self._get_text(link)
+                                m_id = self._extract_id_from_url(
+                                    m_url, constants.MANGA_ID_PATTERN)
+                                if m_id and m_name and m_url:
+                                    try:
+                                        # Ensure URL is absolute
+                                        abs_m_url = f"https://myanimelist.net{m_url}" if m_url.startswith(
+                                            '/') else m_url
+                                        mangaography_items.append(
+                                            LinkItem(mal_id=m_id, name=m_name, url=abs_m_url, type="manga"))
+                                    except ValidationError as e:
+                                        logger.warning(
+                                            f"Skipping invalid mangaography link: Name='{m_name}', URL='{m_url}'. Error: {e}")
+                    # --- END OF FIX ---
+
+                    fav_cell = self._safe_find(row, "td", class_="favorites")
+                    favorites = self._parse_int(self._get_text(fav_cell))
+
+                    if mal_id and name:
+                        # Ensure URL is absolute before adding to dict
+                        abs_char_url = f"https://myanimelist.net{url}" if url.startswith(
+                            '/') else url
+                        results_data.append({
+                            "mal_id": mal_id,
+                            "url": abs_char_url,
+                            "image_url": image_url_str,
+                            "name": name,
+                            "japanese_name": jp_name,
+                            "nickname": None,
+                            "favorites": favorites,
+                            "rank": rank,
+                            "animeography": animeography_items,
+                            "mangaography": mangaography_items
+                        })
+
+                except Exception as e:
+                    logger.exception(
+                        f"Error parsing top character row: {e}. Row: {row.text[:100]}...")
+
+        elif mode == 'search':
+            # --- FIX: Corrected Animeography/Mangaography Parsing for Search Mode ---
+            # (This part also needs adjustment as the structure is different)
+            result_table = self._safe_find(soup, "table")
+            rows = []
+            if result_table:
+                rows = self._safe_find_all(result_table, "tr")
+                if rows and ('Header' in self._get_text(rows[0]) or 'Character' in self._get_text(rows[0])):
+                    rows = rows[1:]
+            else:
+                rows = soup.select("tr.borderClass, tr[class^='bgColor']")
+            logger.debug(f"[Search Mode] Found {len(rows)} potential rows.")
+
+            for row in rows:
+                try:
+                    cells = self._safe_find_all(row, "td", recursive=False)
+                    if len(cells) < 3:
+                        continue
+
+                    pic_cell = cells[0]
+                    info_cell = cells[1]
+                    # The cell containing both anime and manga
+                    ography_cell = cells[2]
+
+                    img_tag = self._safe_find(pic_cell, "img")
+                    image_url_str = self._get_attr(
+                        img_tag, 'data-src') or self._get_attr(img_tag, 'src')
+
+                    name_link = self._safe_find(info_cell, "a")
+                    name = self._get_text(name_link)
+                    url = self._get_attr(name_link, 'href')
+                    mal_id = self._extract_id_from_url(url, id_pattern)
+
+                    nickname_tag = self._safe_find(info_cell, "small")
+                    nickname = self._get_text(nickname_tag).strip(
+                        '()') if nickname_tag else None
+
+                    animeography_items = []
+                    mangaography_items = []
+                    if ography_cell:
+                        # Find all <a> tags directly within the ography cell
+                        all_links = self._safe_find_all(ography_cell, "a")
+                        current_list = None  # Track if we are parsing anime or manga links
+
+                        # Check for markers like 'Anime:' or 'Manga:' if they exist as text nodes or in divs
+                        anime_marker = ography_cell.find(
+                            string=re.compile(r"^\s*Anime:", re.I))
+                        manga_marker = ography_cell.find(
+                            string=re.compile(r"^\s*Manga:", re.I))
+
+                        # If markers exist, parse based on position relative to markers (more complex)
+                        # Simpler approach: Iterate through links and guess type based on URL
+                        for link in all_links:
+                            link_url = self._get_attr(link, "href")
+                            link_name = self._get_text(link)
+
+                            if not (link_url and link_name):
+                                continue
+
+                            a_id = self._extract_id_from_url(
+                                link_url, constants.ANIME_ID_PATTERN)
+                            m_id = self._extract_id_from_url(
+                                link_url, constants.MANGA_ID_PATTERN)
+                            if a_id:  # Likely an anime link
+                                try:
+                                    animeography_items.append(
+                                        LinkItem(mal_id=a_id, name=link_name, url=link_url, type="anime"))
+                                except ValidationError:
+                                    pass
+                            elif m_id:  # Likely a manga link
+                                try:
+                                    mangaography_items.append(
+                                        LinkItem(mal_id=m_id, name=link_name, url=link_url, type="manga"))
+                                except ValidationError:
+                                    pass
+                            else:
+                                logger.debug(
+                                    f"Could not determine type for ography link: {link_name} ({link_url})")
+
+                    if mal_id and name:
+                        # Ensure URL is absolute
+                        results_data.append({
+                            "mal_id": mal_id,
+                            "url": url,
+                            "image_url": image_url_str,
+                            "name": name,
+                            "nickname": nickname,
+                            "japanese_name": None,
+                            "favorites": None,
+                            "rank": None,
+                            "animeography": animeography_items,
+                            "mangaography": mangaography_items
+                        })
+
+                except Exception as e:
+                    logger.exception(
+                        f"Error parsing search character row: {e}. Row: {row.text[:100]}...")
+            # --- END OF FIX ---
+
+        return results_data
+
+
 
     def _parse_character_details_page(
         self,

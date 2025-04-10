@@ -1,7 +1,7 @@
 from typing import Optional
 from pydantic import BaseModel, HttpUrl, field_validator
 from typing import Optional
-from mal4u import constants
+from mal4u.constants import MAL_DOMAIN
 
 
 class malIdMixin(BaseModel):
@@ -20,7 +20,7 @@ class imageUrlMixin(BaseModel):
         elif isinstance(v, str):
             if v == "": return None
             if v.startswith('/'):
-                v = constants.MAL_DOMAIN + v
+                v = MAL_DOMAIN + v
             
             return HttpUrl(v)
         else:
@@ -34,7 +34,7 @@ class urlMixin(BaseModel):
         if isinstance(v, HttpUrl): return v
         elif isinstance(v, str):
             if v.startswith('/'):
-                v = constants.MAL_DOMAIN + v
+                v = MAL_DOMAIN + v
             
             return HttpUrl(v)
         else:

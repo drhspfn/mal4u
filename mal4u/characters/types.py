@@ -1,6 +1,5 @@
 from pydantic import BaseModel, HttpUrl, Field
 from typing import Optional, List
-
 from mal4u.mixins import imageUrlMixin, malIdMixin, urlMixin
 from mal4u.types import LinkItem
 
@@ -18,8 +17,8 @@ class CharacterSearchResult(BaseModel):
     japanese_name: Optional[str] = None 
     favorites: Optional[int] = None 
     rank: Optional[int] = None
-    animeography: List[RelatedMediaItem] = Field(default_factory=list)
-    mangaography: List[RelatedMediaItem] = Field(default_factory=list)
+    animeography: List[LinkItem] = Field(default_factory=list)
+    mangaography: List[LinkItem] = Field(default_factory=list)
     
 
 

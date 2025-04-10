@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 import aiohttp
 import logging
-
 from pydantic import ValidationError
 from bs4 import Tag 
 from mal4u.details_base import BaseDetailsParser

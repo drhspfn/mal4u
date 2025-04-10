@@ -1,12 +1,8 @@
 import re
 import logging
-from typing import Dict, List, Optional, Tuple, Type, TypeVar, Any, Union
-
+from typing import Dict, List, Optional, Tuple, Type, TypeVar, Any
 from bs4 import BeautifulSoup, Tag, NavigableString
 from pydantic import ValidationError, HttpUrl
-
-from mal4u import constants
-
 from .base import BaseParser
 from .types import AnimeBroadcast, LinkItem, RelatedItem, CharacterItem, ExternalLink, BaseDetails
 
