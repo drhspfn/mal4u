@@ -2,10 +2,11 @@ import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import aiohttp
 from bs4 import BeautifulSoup, Tag, NavigableString
-from typing import Dict, List, Literal, Optional, Any, Tuple, Type, Union
+from typing import Dict, List, Literal, Optional, Any, Tuple, Union
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pydantic import ValidationError
+from mal4u.constants import LinkItemType
 from .types import LinkItem
 
 logger = logging.getLogger(__name__)
@@ -115,14 +116,27 @@ class BaseParser:
         return element.get(attr, default) if element else default
 
     def _parse_int(self, text: Optional[str], default: Optional[int] = None) -> Optional[int]:
+        """Tries to convert a string to int, removing commas and handling K/M suffixes."""
         if text is None:
             return default
         try:
-            # Remove commas and potential unicode spaces before converting
-            cleaned_text = text.replace(',', '').replace('\xa0', '').strip()
-            if not cleaned_text:
-                return default
-            return int(cleaned_text)
+            cleaned_text = text.lower().strip().replace(',', '')
+            multiplier = 1
+            if 'k' in cleaned_text:
+                multiplier = 1000
+                cleaned_text = cleaned_text.replace('k', '')
+            elif 'm' in cleaned_text:
+                multiplier = 1000000
+                cleaned_text = cleaned_text.replace('m', '')
+
+            # Check if it's a valid number after cleaning suffixes
+            # Use float conversion first to handle potential decimals like '2.2k'
+            if not cleaned_text or cleaned_text == 'n/a' or cleaned_text == '?':
+                 return default
+
+            value = float(cleaned_text) * multiplier
+            return int(value) # Convert to int after applying multiplier
+
         except (ValueError, TypeError):
             logger.warning(f"Could not parse int from: '{text}'")
             return default
@@ -281,6 +295,73 @@ class BaseParser:
                     f"Skipping link node: Name='{name}', Href='{href}', Extracted ID='{mal_id}' using pattern '{pattern}'")
 
         return links
+
+    def _parse_links_from_list(
+        self,
+        link_tags: List[Tag], # Changed parameter name and type hint
+        pattern: Union[str, re.Pattern] = r"/(\d+)/",
+        link_type_hint: Optional[LinkItemType] = None # Added type hint parameter
+    ) -> List[LinkItem]:
+        """
+        Parses a list of <a> tags into LinkItems.
+        Extracts MAL ID from the href using the provided regex pattern.
+        """
+        links = []
+        if not link_tags: # Check if the input list is empty
+            return links
+
+        # Removed sibling iteration logic
+
+        for link_tag in link_tags: # Iterate directly over the provided list of tags
+            href = self._get_attr(link_tag, 'href')
+            name = self._get_text(link_tag)
+            mal_id = None
+            link_type = link_type_hint # Use the hint provided by the caller
+
+            if href:
+                mal_id = self._extract_id_from_url(href, pattern=pattern)
+                # If no hint or generic hint, try to infer type from URL
+                if not link_type or link_type == "genre":
+                    if "/anime/producer/" in href or "/company/" in href:
+                        link_type = "producer"
+                    elif "/people/" in href:
+                        link_type = "person"
+                    elif "/character/" in href:
+                        link_type = "character"
+                    elif "/manga/magazine/" in href:
+                        link_type = "magazine"
+                    # Explicitly check for genre links LAST to avoid overriding more specific types
+                    elif "/anime/genre/" in href or "/manga/genre/" in href:
+                         link_type = "genre"
+
+
+            if name and href and mal_id is not None:
+                try:
+                    # Use the determined link_type
+                    links.append(
+                        LinkItem(mal_id=mal_id, name=name, url=href, type=link_type))
+                except ValidationError as e:
+                    logger.warning(
+                        f"Skipping invalid link item: Name='{name}', URL='{href}', ID='{mal_id}'. Error: {e}")
+            else:
+                logger.debug(
+                    f"Skipping link node: Name='{name}', Href='{href}', Extracted ID='{mal_id}' using pattern '{pattern}'")
+
+        return links
+
+    def _parse_time_jst(self, time_str: Optional[str]) -> Optional[time]:
+        """Parses time string like '00:00 (JST)'."""
+        if not time_str: return None
+        time_match = re.match(r"(\d{1,2}):(\d{2})", time_str.strip())
+        if time_match:
+            hour, minute = map(int, time_match.groups())
+            try:
+                # Assuming JST is UTC+9
+                # We store time naively, but know it's JST contextually
+                return time(hour, minute)
+            except ValueError:
+                logger.warning(f"Invalid time parsed: {hour}:{minute}")
+        return None
 
     def _parse_mal_date_range(self, date_str: Optional[str]) -> Tuple[Optional[date], Optional[date]]:
         if not date_str or date_str.strip() == '?':

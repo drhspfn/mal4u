@@ -17,6 +17,8 @@ MANGA_ID_PATTERN = compile(r"/manga/(\d+)(?:/[^/]*)?")
 # --- Anime
 ANIME_URL = "/anime.php"
 ANIME_DETAILS_URL = "/anime/{anime_id}"
+ANIME_SEASONAL_URL = "anime/season/{year}/{season}"
+ANIME_SCHEDULE_URL = "anime/season/schedule"
 ANIME_ID_PATTERN = compile(r"/anime/(\d+)(?:/[^/]*)?")
 
 # --- Character
@@ -25,8 +27,9 @@ ANIME_DETAILS_URL = "/character/{character_id}"
 CHARACTER_ID_PATTERN = compile(r"/character/(\d+)(?:/[^/]*)?")
 
 
+PRODUCER_ID_PATTERN = compile(r"/producer/(\d+)(?:/[^/]*)?")
 PERSON_ID_PATTERN = compile(r"/people/(\d+)(?:/[^/]*)?")
-
+GENRE_ID_PATTERN = compile(r"/genre/(\d+)(?:/[^/]*)?")
 
 class TopType(StrEnum):
     # Common to anime and manga
@@ -91,3 +94,21 @@ class LinkItemType(StrEnum):
     MAGAZINE = "magazine"
     ANIME = "anime"
     MANGA = "manga"
+    
+    
+class Season(StrEnum):
+    WINTER = "winter"
+    SPRING = "spring"
+    SUMMER = "summer"
+    FALL = "fall"
+
+class DayOfWeek(StrEnum):
+    MONDAY = "monday"
+    TUESDAY = "tuesday"
+    WEDNESDAY = "wednesday"
+    THURSDAY = "thursday"
+    FRIDAY = "friday"
+    SATURDAY = "saturday"
+    SUNDAY = "sunday"
+    OTHER = "other" # For non-weekly releases?
+    UNKNOWN = "unknown" # For entries without a specified day

@@ -283,14 +283,13 @@ class MALMangaParser(BaseSearchParser, BaseDetailsParser):
             logger.warning(f"Could not find the main 'anime-manga-search' container on {target_url}.")
             return []
 
-        genre_id_pattern = re.compile(r"/genre/(\d+)/")
         all_genres: List[LinkItem] = []
 
         logger.debug("Parsing 'Genres' section...")
         genres_list = await self._parse_link_section(
             container=search_container,
             header_text_exact="Genres",
-            id_pattern=genre_id_pattern,
+            id_pattern=constants.GENRE_ID_PATTERN,
             category_name_for_logging="Genres"
         )
         all_genres.extend(genres_list)
@@ -300,7 +299,7 @@ class MALMangaParser(BaseSearchParser, BaseDetailsParser):
             explicit_genres_list = await self._parse_link_section(
                 container=search_container,
                 header_text_exact="Explicit Genres",
-                id_pattern=genre_id_pattern,
+                id_pattern=constants.GENRE_ID_PATTERN,
                 category_name_for_logging="Explicit Genres"
             )
             all_genres.extend(explicit_genres_list)
@@ -333,12 +332,10 @@ class MALMangaParser(BaseSearchParser, BaseDetailsParser):
             logger.warning(f"Could not find the main 'anime-manga-search' container on {target_url}.")
             return []
 
-        theme_id_pattern = re.compile(r"/genre/(\d+)/")
-
         themes_list = await self._parse_link_section(
             container=search_container,
             header_text_exact="Themes",
-            id_pattern=theme_id_pattern,
+            id_pattern=constants.GENRE_ID_PATTERN,
             category_name_for_logging="Themes"
         )
 
@@ -370,12 +367,10 @@ class MALMangaParser(BaseSearchParser, BaseDetailsParser):
             logger.warning(f"Could not find the main 'anime-manga-search' container on {target_url}.")
             return []
 
-        demographic_id_pattern = re.compile(r"/genre/(\d+)/") 
-
         demographics_list = await self._parse_link_section(
             container=search_container,
             header_text_exact="Demographics",
-            id_pattern=demographic_id_pattern,
+            id_pattern=constants.GENRE_ID_PATTERN,
             category_name_for_logging="Demographics"
         )
 
